@@ -59,6 +59,7 @@ func genLocalConfName() string {
 	return localConfigName
 }
 
+// genConfPaths gen conf paths from config path to root path
 func genConfPaths(configPath string) []string {
 	configPaths := make([]string, 0)
 
@@ -176,7 +177,7 @@ func loadFromFile(baseConfName, localConfName string) (*IniData, *IniData, error
 	extConfigPaths = append(extConfigPaths, workConfigPaths...)
 	extConfigPaths = append(extConfigPaths, appConfigPaths...)
 
-	// get base config file from default config path > cmd work path > app path
+	// get base config file from cmd work path > app path
 	baseConfPaths := []string{
 		workPath,
 		appPath,
@@ -188,7 +189,7 @@ func loadFromFile(baseConfName, localConfName string) (*IniData, *IniData, error
 		return nil, nil, err
 	}
 
-	// get local config file from default config path > cmd work path > app path
+	// get local config file from cmd work path > app path
 	localConfPaths := []string{
 		workPath,
 		appPath,

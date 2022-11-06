@@ -211,7 +211,7 @@ func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 
 		key := strings.ToUpper(string(bytes.TrimSpace(params[0]))) // key name case-insensitive
 
-		// handle include "other.conf"
+		// handle include "other.ini"
 		if len(params) == 1 && strings.HasPrefix(key, "include") {
 			includeFiles := strings.Fields(key)
 
