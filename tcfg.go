@@ -48,10 +48,10 @@ func SetPrefix(prefix string) {
 
 // genLocalConfName gen default local config name rcrai_app_name_config.ini
 func genLocalConfName() string {
-	_, appName := filepath.Split(os.Args[0])
-	appExt := filepath.Ext(os.Args[0])
+	_, fileName := filepath.Split(os.Args[0])
+	fileExt := filepath.Ext(os.Args[0])
 
-	appName = strings.TrimSuffix(appName, appExt)
+	appName := strings.TrimSuffix(fileName, fileExt)
 	appName = strings.ToLower(strings.ReplaceAll(appName, "-", "_"))
 
 	localConfigName := fmt.Sprintf("%s_config.ini", appName)
