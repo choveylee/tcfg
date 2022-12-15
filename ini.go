@@ -11,6 +11,7 @@ package tcfg
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/json-iterator/go"
 )
 
 type Config struct {
@@ -497,7 +496,7 @@ func (p *IniData) toString() (string, error) {
 	p.RLock()
 	defer p.RUnlock()
 
-	data, err := jsoniter.Marshal(p.data)
+	data, err := json.Marshal(p.data)
 
 	return string(data), err
 }
