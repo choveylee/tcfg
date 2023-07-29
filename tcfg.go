@@ -649,6 +649,10 @@ func (p *ConfData) Strings(key string, sep string) ([]string, error) {
 
 	vals := strings.Split(val, sep)
 
+	if len(vals) == 1 && vals[0] == "" {
+		return nil, nil
+	}
+
 	return vals, nil
 }
 
