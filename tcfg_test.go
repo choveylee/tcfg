@@ -74,6 +74,10 @@ func TestTryGetLocal(t *testing.T) {
 	}
 	assert.Equal(t, err, nil)
 
+	stringF := DefaultString("STRING_F", "rep_string")
+	assert.Equal(t, stringF, `string_f
+string_f`)
+
 	stringZ, err := String("STRING_Z")
 	assert.Equal(t, stringZ, "")
 	assert.Equal(t, err.Error(), terror.ErrDataNotExist("STRING_Z").Error())

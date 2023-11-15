@@ -29,9 +29,6 @@ var (
 
 const (
 	DefaultStringsSeparator = ","
-
-	DefaultBaseConfigName  = "base_config.ini"
-	DefaultLocalConfigName = "local_config.ini"
 )
 
 const (
@@ -46,17 +43,17 @@ func SetPrefix(prefix string) {
 	DefaultKeyPrefix = prefix
 }
 
-// genLocalConfName gen default local config name rcrai_app_name_config.ini
-func genLocalConfName() string {
+// genConfName gen default config name rcrai_app_name_config.ini
+func genConfName() string {
 	_, fileName := filepath.Split(os.Args[0])
 	fileExt := filepath.Ext(os.Args[0])
 
 	appName := strings.TrimSuffix(fileName, fileExt)
 	appName = strings.ToLower(strings.ReplaceAll(appName, "-", "_"))
 
-	localConfigName := fmt.Sprintf("%s_config.ini", appName)
+	configName := fmt.Sprintf("%s_config.ini", appName)
 
-	return localConfigName
+	return configName
 }
 
 // genConfPaths gen conf paths from config path to root path
@@ -141,32 +138,31 @@ func analysisKey(key string, prefix string, subPrefix string) (string, string) {
 }
 
 type ConfData struct {
-	baseConf  *IniData
-	localConf *IniData
+	iniData *IniData
 
-	envConf *EnvData
+	envData *EnvData
 }
 
 type Configs struct {
-	BaseConfigs  []*Config `json:"base_configs"`
-	LocalConfigs []*Config `json:"local_configs"`
+	Configs []*Config `json:"configs"`
 }
 
 type Response struct {
 	Error   int
 	Message string
-	Data    *Configs `json:"data"`
+
+	Data *Configs `json:"data"`
 }
 
-func loadFromFile(baseConfName, localConfName string) (*IniData, *IniData, error) {
+func loadFromFile(configName string) (*IniData, error) {
 	workPath, err := os.Getwd()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	appPath, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	extConfigPaths := make([]string, 0)
@@ -177,56 +173,39 @@ func loadFromFile(baseConfName, localConfName string) (*IniData, *IniData, error
 	extConfigPaths = append(extConfigPaths, workConfigPaths...)
 	extConfigPaths = append(extConfigPaths, appConfigPaths...)
 
-	// get base config file from cmd work path > app path
-	baseConfPaths := []string{
+	// get config file from cmd work path > app path
+	configPaths := []string{
 		workPath,
 		appPath,
 	}
-	baseConfPaths = append(baseConfPaths, extConfigPaths...)
 
-	baseConfPath, err := analysisConfPath(baseConfPaths, baseConfName)
+	configPaths = append(configPaths, extConfigPaths...)
+
+	configPath, err := analysisConfPath(configPaths, configName)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	// get local config file from cmd work path > app path
-	localConfPaths := []string{
-		workPath,
-		appPath,
-	}
-	localConfPaths = append(localConfPaths, extConfigPaths...)
-
-	localConfPath, err := analysisConfPath(localConfPaths, localConfName)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	iniMgr := &IniMgr{}
 
-	baseConf, err := iniMgr.ParseFile(baseConfPath)
+	iniData, err := iniMgr.ParseFile(configPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	localConf, err := iniMgr.ParseFile(localConfPath)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return baseConf, localConf, nil
+	return iniData, nil
 }
 
-func (p *ConfData) defaultLoad(baseConfName, localConfName string) error {
-	// 1. init env
-	envConf := &EnvData{}
+func (p *ConfData) defaultLoad(configName string) error {
+	// init env
+	envData := &EnvData{}
 
-	p.envConf = envConf
+	p.envData = envData
 
-	// 2. load from file
-	baseConf, localConf, err := loadFromFile(baseConfName, localConfName)
+	// load from file
+	iniData, err := loadFromFile(configName)
 	if err == nil {
-		p.baseConf = baseConf
-		p.localConf = localConf
+		p.iniData = iniData
 
 		return nil
 	}
@@ -590,7 +569,6 @@ func (p *ConfData) String(key string) (string, error) {
 	return "", terror.ErrDataNotExist(key)
 }
 
-// stringEx
 func (p *ConfData) stringEx(key string) (string, bool, error) {
 	appName, ok, err := p.string(DefaultAppName)
 	if ok == false || err != nil {
@@ -614,17 +592,12 @@ func (p *ConfData) stringEx(key string) (string, bool, error) {
 }
 
 func (p *ConfData) string(key string) (string, bool, error) {
-	val, ok := p.envConf.GetString(key)
+	val, ok := p.envData.GetString(key)
 	if ok == true {
 		return val, ok, nil
 	}
 
-	val, ok = p.localConf.GetString(key)
-	if ok == true {
-		return val, ok, nil
-	}
-
-	val, ok = p.baseConf.GetString(key)
+	val, ok = p.iniData.GetString(key)
 	if ok == true {
 		return val, ok, nil
 	}
@@ -650,7 +623,7 @@ func (p *ConfData) Strings(key string, sep string) ([]string, error) {
 	vals := strings.Split(val, sep)
 
 	if len(vals) == 1 && vals[0] == "" {
-		return nil, nil
+		return []string{}, nil
 	}
 
 	return vals, nil
@@ -666,10 +639,8 @@ func (p *ConfData) DefaultStrings(key string, sep string, defaultVals []string) 
 }
 
 func (p *ConfData) DebugToString() string {
-	baseConfData, _ := p.baseConf.toString()
+	strIniData, _ := p.iniData.toString()
 
-	localConfData, _ := p.localConf.toString()
-
-	return fmt.Sprintf("base config data: %s.\nlocal config data: %s",
-		baseConfData, localConfData)
+	return fmt.Sprintf("ini config data: %s.\n",
+		strIniData)
 }

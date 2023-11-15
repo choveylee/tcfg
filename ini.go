@@ -211,41 +211,45 @@ func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 		key := strings.ToUpper(string(bytes.TrimSpace(params[0]))) // key name case-insensitive
 
 		// handle include "other.ini"
-		if len(params) == 1 && strings.HasPrefix(key, "include") {
-			includeFiles := strings.Fields(key)
+		if len(params) == 1 {
+			param := string(bytes.TrimSpace(params[0]))
 
-			if includeFiles[0] == "include" && len(includeFiles) == 2 {
-				includeFile := strings.Trim(includeFiles[1], "\"")
+			if strings.HasPrefix(param, "include") {
+				includeFiles := strings.Fields(param)
 
-				if !filepath.IsAbs(includeFile) {
-					includeFile = filepath.Join(dir, includeFile)
-				}
+				if includeFiles[0] == "include" && len(includeFiles) == 2 {
+					includeFile := strings.Trim(includeFiles[1], "\"")
 
-				includeIniData, err := p.parseFile(includeFile)
-				if err != nil {
-					return nil, err
-				}
-
-				for section, vals := range includeIniData.data {
-					_, ok := iniData.data[section]
-					if ok == false {
-						iniData.data[section] = make(map[string]string)
+					if !filepath.IsAbs(includeFile) {
+						includeFile = filepath.Join(dir, includeFile)
 					}
 
-					for key, val := range vals {
-						iniData.data[section][key] = val
+					includeIniData, err := p.parseFile(includeFile)
+					if err != nil {
+						return nil, err
 					}
-				}
 
-				for section, comment := range includeIniData.secComment {
-					iniData.secComment[section] = comment
-				}
+					for section, vals := range includeIniData.data {
+						_, ok := iniData.data[section]
+						if ok == false {
+							iniData.data[section] = make(map[string]string)
+						}
 
-				for key, comment := range includeIniData.keyComment {
-					iniData.keyComment[key] = comment
-				}
+						for key, val := range vals {
+							iniData.data[section][key] = val
+						}
+					}
 
-				continue
+					for section, comment := range includeIniData.secComment {
+						iniData.secComment[section] = comment
+					}
+
+					for key, comment := range includeIniData.keyComment {
+						iniData.keyComment[key] = comment
+					}
+
+					continue
+				}
 			}
 		}
 
@@ -259,7 +263,12 @@ func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 			val = bytes.Trim(val, string(QuoteStr))
 		}
 
-		iniData.data[section][key] = string(val)
+		// replace //n to ##n
+		retVal := strings.ReplaceAll(string(val), "\\\\n", "$$n")
+		retVal = strings.ReplaceAll(retVal, "\\n", "\n")
+		retVal = strings.ReplaceAll(retVal, "$$n", "\\n")
+
+		iniData.data[section][key] = retVal
 
 		if commentData.Len() > 0 {
 			iniData.keyComment[section+"."+key] = commentData.String()

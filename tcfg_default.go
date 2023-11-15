@@ -10,12 +10,11 @@ package tcfg
 
 var defaultConfData = &ConfData{}
 
-// init load global config from base_config.ini & local config from app_name_config.ini
+// init load config from app_name_config.ini
 func init() {
-	globalConfName := DefaultBaseConfigName
-	localConfName := genLocalConfName()
+	configName := genConfName()
 
-	err := defaultConfData.defaultLoad(globalConfName, localConfName)
+	err := defaultConfData.defaultLoad(configName)
 	if err != nil {
 		panic(err)
 	}
