@@ -1,10 +1,12 @@
 module github.com/choveylee/tcfg
 
-go 1.19
+go 1.23
+
+toolchain go1.24.1
 
 require (
-	github.com/choveylee/terror v0.0.0-20221105132813-997ba58d0bf1
-	github.com/stretchr/testify v1.8.1
+	github.com/choveylee/terror v0.0.0-20250407233202-699576223401
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
