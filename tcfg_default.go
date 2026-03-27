@@ -8,9 +8,10 @@
 
 package tcfg
 
+// defaultConfData is the package-default configuration used by String, Bool, and other package-level accessors.
 var defaultConfData = &ConfData{}
 
-// init load config from app_name_config.ini
+// init loads <executable>_config.ini into defaultConfData; failure panics.
 func init() {
 	configName := genConfName()
 
@@ -20,6 +21,7 @@ func init() {
 	}
 }
 
+// Package-level accessors delegate to defaultConfData (same signatures as (*ConfData) methods).
 var LocalKey = defaultConfData.LocalKey
 
 var Bool = defaultConfData.Bool

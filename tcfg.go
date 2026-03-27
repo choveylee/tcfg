@@ -9,17 +9,20 @@
 package tcfg
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/choveylee/terror"
 )
 
+// Regular expressions used to find ${key}, $[key], and escaped $${...} / $$[...] spans in config values.
 var (
 	ValStringKeyMatchReg  = regexp.MustCompile(`\$\{(.+?)\}`)
 	ValStringsKeyMatchReg = regexp.MustCompile(`\$\[(.+?)\]`)
@@ -27,23 +30,43 @@ var (
 	ValStringKeyReplaceReg = regexp.MustCompile(`\$\$\{(.+?)\}|\$\$\[(.+?)\]`)
 )
 
+// DefaultStringsSeparator is the default delimiter when splitting list values for $[key] expansion.
 const (
 	DefaultStringsSeparator = ","
 )
 
+// DefaultAppName is the configuration key used as the application name for scoped/local keys.
 const (
 	DefaultAppName = "APP_NAME"
 )
 
+// ErrNilConfData is returned when a *ConfData method is invoked with a nil receiver.
+var ErrNilConfData = errors.New("tcfg: nil *ConfData")
+
 var (
-	DefaultKeyPrefix = ""
+	keyPrefixMutex sync.RWMutex
+
+	defaultKeyPrefix string
 )
 
-func SetPrefix(prefix string) {
-	DefaultKeyPrefix = prefix
+// GetKeyPrefix returns the key prefix configured by SetKeyPrefix. It is safe for concurrent use with SetKeyPrefix.
+func GetKeyPrefix() string {
+	keyPrefixMutex.RLock()
+	defer keyPrefixMutex.RUnlock()
+
+	return defaultKeyPrefix
 }
 
-// genConfName gen default config name rcrai_app_name_config.ini
+// SetKeyPrefix sets the global key prefix applied when resolving keys (safe for concurrent use with GetKeyPrefix).
+func SetKeyPrefix(keyPrefix string) {
+	keyPrefixMutex.Lock()
+
+	defaultKeyPrefix = keyPrefix
+
+	keyPrefixMutex.Unlock()
+}
+
+// genConfName returns <executable_basename>_config.ini (lowercased, hyphen becomes underscore).
 func genConfName() string {
 	_, fileName := filepath.Split(os.Args[0])
 	fileExt := filepath.Ext(os.Args[0])
@@ -56,7 +79,7 @@ func genConfName() string {
 	return configName
 }
 
-// genConfPaths gen conf paths from config path to root path
+// genConfPaths returns parent directories from configPath up to the filesystem root (excluding configPath itself).
 func genConfPaths(configPath string) []string {
 	configPaths := make([]string, 0)
 
@@ -73,21 +96,21 @@ func genConfPaths(configPath string) []string {
 	return configPaths
 }
 
-// analysisConfPath analysis config file status & return available config file path
+// analysisConfPath searches confPaths in order for confName; returns the first regular file path or ("", nil) if not found.
 func analysisConfPath(confPaths []string, confName string) (string, error) {
 	for _, confPath := range confPaths {
 		retConfPath := filepath.Join(confPath, confName)
 
 		file, err := os.Stat(retConfPath)
 		if err == nil {
-			if file.IsDir() == true {
+			if file.IsDir() {
 				return "", terror.ErrConfIllegal(retConfPath)
 			}
 
 			return retConfPath, nil
 		}
 
-		if os.IsNotExist(err) == false {
+		if !os.IsNotExist(err) {
 			return "", err
 		}
 	}
@@ -95,19 +118,20 @@ func analysisConfPath(confPaths []string, confName string) (string, error) {
 	return "", nil
 }
 
-// analysisKey make sure key has given prefix string
+// analysisKey builds uppercased lookup keys with optional prefix and APP_NAME sub-prefix (section::key supported).
+// It returns (originalKey, baseKey) for fallback when scoped keys differ from unscoped.
 func analysisKey(key string, prefix string, subPrefix string) (string, string) {
 	key = strings.ToUpper(key)
 
 	params := strings.Split(key, "::")
 
 	if len(params) == 1 {
-		if strings.HasPrefix(key, prefix) == true {
+		if strings.HasPrefix(key, prefix) {
 			key = strings.TrimPrefix(key, prefix)
 		}
 
 		tmpKey := key
-		if strings.HasPrefix(tmpKey, subPrefix) == true {
+		if strings.HasPrefix(tmpKey, subPrefix) {
 			tmpKey = strings.TrimPrefix(tmpKey, subPrefix)
 		}
 
@@ -117,18 +141,18 @@ func analysisKey(key string, prefix string, subPrefix string) (string, string) {
 		return originalKey, baseKey
 	} else if len(params) > 1 {
 		section := params[0]
-		key := params[1]
+		secKey := params[1]
 
-		if strings.HasPrefix(key, prefix) == true {
-			key = strings.TrimPrefix(key, prefix)
+		if strings.HasPrefix(secKey, prefix) {
+			secKey = strings.TrimPrefix(secKey, prefix)
 		}
 
-		tmpKey := key
-		if strings.HasPrefix(tmpKey, subPrefix) == true {
+		tmpKey := secKey
+		if strings.HasPrefix(tmpKey, subPrefix) {
 			tmpKey = strings.TrimPrefix(tmpKey, subPrefix)
 		}
 
-		originalKey := fmt.Sprintf("%s::%s%s", section, prefix, key)
+		originalKey := fmt.Sprintf("%s::%s%s", section, prefix, secKey)
 		baseKey := fmt.Sprintf("%s::%s%s", section, prefix, tmpKey)
 
 		return originalKey, baseKey
@@ -137,16 +161,19 @@ func analysisKey(key string, prefix string, subPrefix string) (string, string) {
 	return "", ""
 }
 
+// ConfData holds parsed INI data and environment overrides; env is checked before INI for each key.
 type ConfData struct {
 	iniData *IniData
 
 	envData *EnvData
 }
 
+// Configs is a JSON-friendly list of flat key/value entries (used by Response).
 type Configs struct {
 	Configs []*Config `json:"configs"`
 }
 
+// Response groups an error code, message, and optional Configs payload.
 type Response struct {
 	Error   int
 	Message string
@@ -154,6 +181,7 @@ type Response struct {
 	Data *Configs `json:"data"`
 }
 
+// loadFromFile searches the working directory and executable directory (and parents) for configName and parses it.
 func loadFromFile(configName string) (*IniData, error) {
 	workPath, err := os.Getwd()
 	if err != nil {
@@ -196,7 +224,12 @@ func loadFromFile(configName string) (*IniData, error) {
 	return iniData, nil
 }
 
+// defaultLoad initializes env storage and merges INI loaded from configName into p.
 func (p *ConfData) defaultLoad(configName string) error {
+	if p == nil {
+		return ErrNilConfData
+	}
+
 	// init env
 	envData := &EnvData{}
 
@@ -213,8 +246,13 @@ func (p *ConfData) defaultLoad(configName string) error {
 	return err
 }
 
-// analysisValue support replace ${Key} & $[Key]
+// analysisValue expands ${key}, Cartesian-expands $[key] list placeholders, then unescapes $${...}/$$[...].
+// The bool reports whether any ${} or $[] substitution ran (step 3 may still run when false).
 func (p *ConfData) analysisValue(val string) (string, bool, error) {
+	if p == nil {
+		return val, false, ErrNilConfData
+	}
+
 	isMatch := false
 
 	retVal := ""
@@ -246,16 +284,15 @@ func (p *ConfData) analysisValue(val string) (string, bool, error) {
 		key := strings.TrimSpace(val[tmpStartIndex+2 : tmpEndIndex-1])
 
 		realVal, ok, err := p.stringEx(key)
-		if ok == false {
+		if !ok {
 			return val, isMatch, terror.ErrDataNotExist(key)
-		} else {
-			if err != nil {
-				return val, isMatch, err
-			}
-
-			retVal += realVal
-			startIndex = tmpEndIndex
 		}
+		if err != nil {
+			return val, isMatch, err
+		}
+
+		retVal += realVal
+		startIndex = tmpEndIndex
 	}
 
 	retVal += val[startIndex:]
@@ -284,7 +321,7 @@ func (p *ConfData) analysisValue(val string) (string, bool, error) {
 		matchKey := val[tmpStartIndex:tmpEndIndex]
 
 		_, ok := matchKeysMap[matchKey]
-		if ok == true {
+		if ok {
 			continue
 		}
 
@@ -335,14 +372,13 @@ func (p *ConfData) analysisValue(val string) (string, bool, error) {
 			}
 		}
 	}
-
 	retVal = strings.Join(rets, DefaultStringsSeparator)
 
-	if isMatch == true {
+	if isMatch {
 		return retVal, isMatch, nil
 	}
 
-	// 3 replace $${key} & &&[key]
+	// Step 3: turn escaped $${...} / $$[...] into literal ${...} / $[...] (strip one leading $; see ValStringKeyReplaceReg).
 	startIndex = 0
 
 	val = retVal
@@ -365,22 +401,25 @@ func (p *ConfData) analysisValue(val string) (string, bool, error) {
 	return retVal, isMatch, nil
 }
 
-// LocalKey convert key to local key
+// LocalKey builds keyPrefix + upper(APP_NAME) + "_" + key when APP_NAME is set; strips keyPrefix if already present.
 func (p *ConfData) LocalKey(key string) string {
 	appName, ok, err := p.string(DefaultAppName)
-	if err == nil && ok == true {
-		appName = strings.ToUpper(strings.Replace(appName, "-", "_", -1))
+	if err == nil && ok {
+		keyPrefix := GetKeyPrefix()
 
-		if strings.HasPrefix(key, DefaultKeyPrefix) == true {
-			key = strings.TrimPrefix(key, DefaultKeyPrefix)
+		if strings.HasPrefix(key, keyPrefix) {
+			key = strings.TrimPrefix(key, keyPrefix)
 		}
 
-		key = fmt.Sprintf("%s%s_%s", DefaultKeyPrefix, appName, key)
+		appName = strings.ToUpper(strings.Replace(appName, "-", "_", -1))
+
+		key = fmt.Sprintf("%s%s_%s", keyPrefix, appName, key)
 	}
 
 	return key
 }
 
+// Bool reads a string value and parses it as a boolean.
 func (p *ConfData) Bool(key string) (bool, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -395,6 +434,7 @@ func (p *ConfData) Bool(key string) (bool, error) {
 	return ret, nil
 }
 
+// DefaultBool is like Bool but returns defaultVal if the key is missing or parsing fails.
 func (p *ConfData) DefaultBool(key string, defaultVal bool) bool {
 	val, err := p.Bool(key)
 	if err != nil {
@@ -404,6 +444,7 @@ func (p *ConfData) DefaultBool(key string, defaultVal bool) bool {
 	return val
 }
 
+// Int reads and parses the value as a base-10 integer.
 func (p *ConfData) Int(key string) (int, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -418,6 +459,7 @@ func (p *ConfData) Int(key string) (int, error) {
 	return ret, nil
 }
 
+// DefaultInt is like Int but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultInt(key string, defaultVal int) int {
 	val, err := p.Int(key)
 	if err != nil {
@@ -427,6 +469,7 @@ func (p *ConfData) DefaultInt(key string, defaultVal int) int {
 	return val
 }
 
+// Int32 reads and parses the value as a 32-bit integer.
 func (p *ConfData) Int32(key string) (int32, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -441,6 +484,7 @@ func (p *ConfData) Int32(key string) (int32, error) {
 	return int32(ret), nil
 }
 
+// DefaultInt32 is like Int32 but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultInt32(key string, defaultVal int32) int32 {
 	val, err := p.Int32(key)
 	if err != nil {
@@ -450,6 +494,7 @@ func (p *ConfData) DefaultInt32(key string, defaultVal int32) int32 {
 	return val
 }
 
+// Int64 reads and parses the value as a 64-bit integer.
 func (p *ConfData) Int64(key string) (int64, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -464,6 +509,7 @@ func (p *ConfData) Int64(key string) (int64, error) {
 	return ret, nil
 }
 
+// DefaultInt64 is like Int64 but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultInt64(key string, defaultVal int64) int64 {
 	val, err := p.Int64(key)
 	if err != nil {
@@ -473,6 +519,7 @@ func (p *ConfData) DefaultInt64(key string, defaultVal int64) int64 {
 	return val
 }
 
+// Float32 reads and parses the value as a 32-bit float.
 func (p *ConfData) Float32(key string) (float32, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -487,6 +534,7 @@ func (p *ConfData) Float32(key string) (float32, error) {
 	return float32(ret), nil
 }
 
+// DefaultFloat32 is like Float32 but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultFloat32(key string, defaultVal float32) float32 {
 	val, err := p.Float32(key)
 	if err != nil {
@@ -496,6 +544,7 @@ func (p *ConfData) DefaultFloat32(key string, defaultVal float32) float32 {
 	return val
 }
 
+// Float64 reads and parses the value as a 64-bit float.
 func (p *ConfData) Float64(key string) (float64, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -510,6 +559,7 @@ func (p *ConfData) Float64(key string) (float64, error) {
 	return ret, nil
 }
 
+// DefaultFloat64 is like Float64 but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultFloat64(key string, defaultVal float64) float64 {
 	val, err := p.Float64(key)
 	if err != nil {
@@ -519,6 +569,7 @@ func (p *ConfData) DefaultFloat64(key string, defaultVal float64) float64 {
 	return val
 }
 
+// Duration reads and parses the value with time.ParseDuration.
 func (p *ConfData) Duration(key string) (time.Duration, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -533,6 +584,7 @@ func (p *ConfData) Duration(key string) (time.Duration, error) {
 	return ret, nil
 }
 
+// DefaultDuration is like Duration but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultDuration(key string, defaultVal time.Duration) time.Duration {
 	val, err := p.Duration(key)
 	if err != nil {
@@ -542,9 +594,10 @@ func (p *ConfData) DefaultDuration(key string, defaultVal time.Duration) time.Du
 	return val
 }
 
+// String returns the fully expanded string value (env, INI, then ${} / $[] interpolation, up to 10 nesting levels).
 func (p *ConfData) String(key string) (string, error) {
 	val, ok, err := p.stringEx(key)
-	if ok == true {
+	if ok {
 		if err == nil {
 			// nested level max 10
 			for i := 0; i < 10; i++ {
@@ -553,7 +606,7 @@ func (p *ConfData) String(key string) (string, error) {
 					return val, err
 				}
 
-				if isMatch == false {
+				if !isMatch {
 					return retVal, nil
 				}
 
@@ -566,21 +619,28 @@ func (p *ConfData) String(key string) (string, error) {
 		return val, err
 	}
 
+	if err != nil {
+		return "", err
+	}
+
 	return "", terror.ErrDataNotExist(key)
 }
 
+// stringEx resolves key using APP_NAME-scoped and base forms; checks env then INI.
 func (p *ConfData) stringEx(key string) (string, bool, error) {
 	appName, ok, err := p.string(DefaultAppName)
-	if ok == false || err != nil {
+	if !ok || err != nil {
 		appName = ""
 	} else {
 		appName = strings.ToUpper(strings.Replace(appName, "-", "_", -1)) + "_"
 	}
 
-	originalKey, baseKey := analysisKey(key, DefaultKeyPrefix, appName)
+	keyPrefix := GetKeyPrefix()
+
+	originalKey, baseKey := analysisKey(key, keyPrefix, appName)
 
 	val, ok, err := p.string(originalKey)
-	if ok == true {
+	if ok {
 		return val, ok, err
 	}
 
@@ -591,20 +651,30 @@ func (p *ConfData) stringEx(key string) (string, bool, error) {
 	return val, ok, err
 }
 
+// string reads a raw value by key from env first, then INI. A nil receiver yields ErrNilConfData.
 func (p *ConfData) string(key string) (string, bool, error) {
-	val, ok := p.envData.GetString(key)
-	if ok == true {
-		return val, ok, nil
+	if p == nil {
+		return "", false, ErrNilConfData
 	}
 
-	val, ok = p.iniData.GetString(key)
-	if ok == true {
-		return val, ok, nil
+	if p.envData != nil {
+		val, ok := p.envData.GetString(key)
+		if ok {
+			return val, ok, nil
+		}
 	}
 
-	return val, ok, nil
+	if p.iniData != nil {
+		val, ok := p.iniData.GetString(key)
+		if ok {
+			return val, ok, nil
+		}
+	}
+
+	return "", false, nil
 }
 
+// DefaultString is like String but returns defaultVal on error or missing key.
 func (p *ConfData) DefaultString(key string, defaultVal string) string {
 	val, err := p.String(key)
 	if err != nil {
@@ -614,6 +684,7 @@ func (p *ConfData) DefaultString(key string, defaultVal string) string {
 	return val
 }
 
+// Strings splits String(key) by sep (empty single field becomes an empty slice).
 func (p *ConfData) Strings(key string, sep string) ([]string, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -629,6 +700,7 @@ func (p *ConfData) Strings(key string, sep string) ([]string, error) {
 	return vals, nil
 }
 
+// DefaultStrings is like Strings but returns defaultVals on error or missing key.
 func (p *ConfData) DefaultStrings(key string, sep string, defaultVals []string) []string {
 	val, err := p.Strings(key, sep)
 	if err != nil {
@@ -638,9 +710,18 @@ func (p *ConfData) DefaultStrings(key string, sep string, defaultVals []string) 
 	return val
 }
 
+// DebugToString returns a short debug dump of INI section data as JSON, or a placeholder when nil.
 func (p *ConfData) DebugToString() string {
+	if p == nil {
+		return "ini config data: <nil>."
+	}
+
+	if p.iniData == nil {
+		return "ini config data: <nil>."
+	}
+
 	strIniData, _ := p.iniData.toString()
 
-	return fmt.Sprintf("ini config data: %s.\n",
+	return fmt.Sprintf("ini config data: %s.",
 		strIniData)
 }

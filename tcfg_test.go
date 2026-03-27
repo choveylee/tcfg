@@ -9,6 +9,7 @@
 package tcfg
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -232,4 +233,40 @@ func TestTryGetGlobal(t *testing.T) {
 	stringD, err := String("STRING_D")
 	assert.Equal(t, stringD, "string_d_gl")
 	assert.Equal(t, err, nil)
+}
+
+func TestIniDataGetDataDeepCopy(t *testing.T) {
+	mgr := &IniMgr{}
+	ini, err := mgr.ParseConfig([]*Config{{Key: "K1", Value: "v1"}})
+	assert.Equal(t, err, nil)
+
+	data := ini.GetData()
+	assert.NotNil(t, data)
+	data[DefaultSection]["K1"] = "changed"
+
+	v, ok := ini.GetString("K1")
+	assert.True(t, ok)
+	assert.Equal(t, "v1", v)
+}
+
+func TestConfDataNilReceiver(t *testing.T) {
+	var p *ConfData
+
+	_, err := p.String("ANY")
+	assert.True(t, errors.Is(err, ErrNilConfData))
+
+	_, err = p.Bool("ANY")
+	assert.True(t, errors.Is(err, ErrNilConfData))
+
+	_, err = p.Int("ANY")
+	assert.True(t, errors.Is(err, ErrNilConfData))
+
+	assert.Equal(t, "ANY", p.LocalKey("ANY"))
+
+	assert.Equal(t, "fallback", p.DefaultString("ANY", "fallback"))
+
+	assert.Contains(t, p.DebugToString(), "ini config data: <nil>.")
+
+	err = p.defaultLoad("nonexistent.ini")
+	assert.True(t, errors.Is(err, ErrNilConfData))
 }
