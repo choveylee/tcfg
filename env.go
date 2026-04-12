@@ -1,11 +1,3 @@
-/**
- * @Author: lidonglin
- * @Description:
- * @File:  env.go
- * @Version: 1.0.0
- * @Date: 2022/11/03 10:35
- */
-
 package tcfg
 
 import (
@@ -15,11 +7,12 @@ import (
 	"time"
 )
 
-// EnvData is a zero-value-friendly helper backed by os.LookupEnv.
+// EnvData reads configuration from process environment variables via [os.LookupEnv].
 type EnvData struct {
 }
 
-// GetBool parses a boolean from the environment; ok is false when the variable is unset.
+// GetBool parses the environment value associated with key as a boolean.
+// The second return value is false if the variable is unset; the error is non-nil when the string is not a recognized boolean form.
 func (p *EnvData) GetBool(key string) (bool, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -31,14 +24,14 @@ func (p *EnvData) GetBool(key string) (bool, bool, error) {
 	return ret, true, err
 }
 
-// Bool returns GetBool's value or false when unset.
+// Bool returns the boolean parsed by [EnvData.GetBool], or false when the variable is unset.
 func (p *EnvData) Bool(key string) (bool, error) {
 	val, _, err := p.GetBool(key)
 
 	return val, err
 }
 
-// DefaultBool returns defaultVal when the variable is missing or invalid.
+// DefaultBool returns defaultVal when the variable is unset or [EnvData.GetBool] reports a parse error.
 func (p *EnvData) DefaultBool(key string, defaultVal bool) bool {
 	val, ok, err := p.GetBool(key)
 	if !ok || err != nil {
@@ -48,7 +41,7 @@ func (p *EnvData) DefaultBool(key string, defaultVal bool) bool {
 	return val
 }
 
-// GetInt parses a decimal int from the environment; ok is false when unset.
+// GetInt parses the environment value as a base-10 integer. The second return value is false if the variable is unset.
 func (p *EnvData) GetInt(key string) (int, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -60,14 +53,14 @@ func (p *EnvData) GetInt(key string) (int, bool, error) {
 	return ret, true, err
 }
 
-// Int is like GetInt but returns 0 when unset.
+// Int returns the integer from [EnvData.GetInt], or zero when the variable is unset.
 func (p *EnvData) Int(key string) (int, error) {
 	val, _, err := p.GetInt(key)
 
 	return val, err
 }
 
-// DefaultInt returns defaultVal when unset or invalid.
+// DefaultInt returns defaultVal when the variable is unset or [EnvData.GetInt] fails to parse.
 func (p *EnvData) DefaultInt(key string, defaultVal int) int {
 	val, ok, err := p.GetInt(key)
 	if !ok || err != nil {
@@ -77,7 +70,7 @@ func (p *EnvData) DefaultInt(key string, defaultVal int) int {
 	return val
 }
 
-// GetInt64 parses a base-10 int64; ok is false when unset.
+// GetInt64 parses the environment value as a base-10 64-bit integer. The second return value is false if the variable is unset.
 func (p *EnvData) GetInt64(key string) (int64, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -89,14 +82,14 @@ func (p *EnvData) GetInt64(key string) (int64, bool, error) {
 	return ret, true, err
 }
 
-// Int64 is like GetInt64 but returns 0 when unset.
+// Int64 returns the value from [EnvData.GetInt64], or zero when the variable is unset.
 func (p *EnvData) Int64(key string) (int64, error) {
 	val, _, err := p.GetInt64(key)
 
 	return val, err
 }
 
-// DefaultInt64 returns defaultVal when unset or invalid.
+// DefaultInt64 returns defaultVal when the variable is unset or [EnvData.GetInt64] fails to parse.
 func (p *EnvData) DefaultInt64(key string, defaultVal int64) int64 {
 	val, ok, err := p.GetInt64(key)
 	if !ok || err != nil {
@@ -106,7 +99,7 @@ func (p *EnvData) DefaultInt64(key string, defaultVal int64) int64 {
 	return val
 }
 
-// GetFloat parses float64; ok is false when unset.
+// GetFloat parses the environment value as a 64-bit floating-point number. The second return value is false if the variable is unset.
 func (p *EnvData) GetFloat(key string) (float64, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -118,14 +111,14 @@ func (p *EnvData) GetFloat(key string) (float64, bool, error) {
 	return ret, true, err
 }
 
-// Float is like GetFloat but returns 0 when unset.
+// Float returns the value from [EnvData.GetFloat], or zero when the variable is unset.
 func (p *EnvData) Float(key string) (float64, error) {
 	val, _, err := p.GetFloat(key)
 
 	return val, err
 }
 
-// DefaultFloat returns defaultVal when unset or invalid.
+// DefaultFloat returns defaultVal when the variable is unset or [EnvData.GetFloat] fails to parse.
 func (p *EnvData) DefaultFloat(key string, defaultVal float64) float64 {
 	val, ok, err := p.GetFloat(key)
 	if !ok || err != nil {
@@ -135,7 +128,7 @@ func (p *EnvData) DefaultFloat(key string, defaultVal float64) float64 {
 	return val
 }
 
-// GetDuration parses time.ParseDuration; ok is false when unset.
+// GetDuration parses the environment value with [time.ParseDuration]. The second return value is false if the variable is unset.
 func (p *EnvData) GetDuration(key string) (time.Duration, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -147,14 +140,14 @@ func (p *EnvData) GetDuration(key string) (time.Duration, bool, error) {
 	return ret, true, err
 }
 
-// Duration is like GetDuration but returns 0 when unset.
+// Duration returns the value from [EnvData.GetDuration], or zero when the variable is unset.
 func (p *EnvData) Duration(key string) (time.Duration, error) {
 	val, _, err := p.GetDuration(key)
 
 	return val, err
 }
 
-// DefaultDuration returns defaultVal when unset or invalid.
+// DefaultDuration returns defaultVal when the variable is unset or [EnvData.GetDuration] fails to parse.
 func (p *EnvData) DefaultDuration(key string, defaultVal time.Duration) time.Duration {
 	val, ok, err := p.GetDuration(key)
 	if !ok || err != nil {
@@ -164,19 +157,19 @@ func (p *EnvData) DefaultDuration(key string, defaultVal time.Duration) time.Dur
 	return val
 }
 
-// GetString returns the raw environment value (after SECTION::KEY rewrite to KEY_SECTION).
+// GetString returns the environment value for key after mapping SECTION::KEY to KEY_SECTION.
 func (p *EnvData) GetString(key string) (string, bool) {
 	return p.getData(key)
 }
 
-// String returns GetString's value or "" when unset.
+// String returns the value from [EnvData.GetString], or an empty string when unset.
 func (p *EnvData) String(key string) string {
 	val, _ := p.GetString(key)
 
 	return val
 }
 
-// DefaultString returns defaultVal when unset.
+// DefaultString returns defaultVal when the variable is unset.
 func (p *EnvData) DefaultString(key string, defaultVal string) string {
 	val, ok := p.GetString(key)
 	if !ok {
@@ -186,7 +179,7 @@ func (p *EnvData) DefaultString(key string, defaultVal string) string {
 	return val
 }
 
-// GetStrings splits the env value by sep; ok is false when unset.
+// GetStrings splits the environment value using sep. The second return value is false if the variable is unset.
 func (p *EnvData) GetStrings(key string, sep string) ([]string, bool) {
 	vals, ok := p.GetString(key)
 	if !ok {
@@ -198,14 +191,14 @@ func (p *EnvData) GetStrings(key string, sep string) ([]string, bool) {
 	return ret, true
 }
 
-// Strings returns GetStrings' slice or nil when unset.
+// Strings returns the slice from [EnvData.GetStrings], or nil when the variable is unset.
 func (p *EnvData) Strings(key string, sep string) []string {
 	vals, _ := p.GetStrings(key, sep)
 
 	return vals
 }
 
-// DefaultStrings returns defaultVals when unset.
+// DefaultStrings returns defaultVals when the variable is unset.
 func (p *EnvData) DefaultStrings(key string, sep string, defaultVals []string) []string {
 	vals, ok := p.GetStrings(key, sep)
 	if !ok {
@@ -215,7 +208,7 @@ func (p *EnvData) DefaultStrings(key string, sep string, defaultVals []string) [
 	return vals
 }
 
-// getData maps SECTION::NAME to the env name NAME_SECTION (single-colon section form).
+// getData resolves key: for SECTION::KEY it looks up the name KEY_SECTION.
 func (p *EnvData) getData(key string) (string, bool) {
 	params := strings.Split(key, "::")
 

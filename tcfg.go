@@ -1,20 +1,3 @@
-// Package tcfg loads INI files together with environment variables, resolves keys using
-// an optional key prefix and APP_NAME-based scoping, and expands values with ${key} and
-// $[key] placeholders (including $${...} / $$[...] escapes for literal $ characters).
-//
-// IniMgr/IniData handle file and in-memory INI parsing (sections, includes, UTF-8 BOM).
-// EnvData reads os environment variables (SECTION::KEY maps to KEY_SECTION).
-// The default ConfData instance is loaded in init from <exe_basename>_config.ini; package-level
-// functions (String, Bool, …) delegate to that instance.
-
-/**
- * @Author: lidonglin
- * @Description:
- * @File:  tcfg.go
- * @Version: 1.0.0
- * @Date: 2022/11/03 10:34
- */
-
 package tcfg
 
 import (
@@ -31,7 +14,11 @@ import (
 	"github.com/choveylee/terror"
 )
 
-// Regular expressions used to find ${key}, $[key], and escaped $${...} / $$[...] spans in config values.
+// ValStringKeyMatchReg matches ${name} placeholders in interpolated values.
+//
+// ValStringsKeyMatchReg matches $[name] list placeholders.
+//
+// ValStringKeyReplaceReg matches escaped $${name} and $$[name] spans for the unescape pass.
 var (
 	ValStringKeyMatchReg  = regexp.MustCompile(`\$\{(.+?)\}`)
 	ValStringsKeyMatchReg = regexp.MustCompile(`\$\[(.+?)\]`)
@@ -39,17 +26,17 @@ var (
 	ValStringKeyReplaceReg = regexp.MustCompile(`\$\$\{(.+?)\}|\$\$\[(.+?)\]`)
 )
 
-// DefaultStringsSeparator is the default delimiter when splitting list values for $[key] expansion.
+// DefaultStringsSeparator is the separator used when splitting list values during $[key] expansion.
 const (
 	DefaultStringsSeparator = ","
 )
 
-// DefaultAppName is the configuration key used as the application name for scoped/local keys.
+// DefaultAppName is the configuration key that holds the application name for APP_NAME-scoped resolution.
 const (
 	DefaultAppName = "APP_NAME"
 )
 
-// ErrNilConfData is returned when a *ConfData method is invoked with a nil receiver.
+// ErrNilConfData is returned when a method is called on a nil *ConfData receiver.
 var ErrNilConfData = errors.New("tcfg: method called on nil *ConfData receiver")
 
 var (
@@ -58,7 +45,7 @@ var (
 	defaultKeyPrefix string
 )
 
-// GetKeyPrefix returns the key prefix configured by SetKeyPrefix. It is safe for concurrent use with SetKeyPrefix.
+// GetKeyPrefix returns the global key prefix set by [SetKeyPrefix]. It is safe for concurrent use with [SetKeyPrefix].
 func GetKeyPrefix() string {
 	keyPrefixMutex.RLock()
 	defer keyPrefixMutex.RUnlock()
@@ -66,7 +53,7 @@ func GetKeyPrefix() string {
 	return defaultKeyPrefix
 }
 
-// SetKeyPrefix sets the global key prefix applied when resolving keys (safe for concurrent use with GetKeyPrefix).
+// SetKeyPrefix sets the global key prefix used when resolving keys. It is safe for concurrent use with [GetKeyPrefix].
 func SetKeyPrefix(keyPrefix string) {
 	keyPrefixMutex.Lock()
 
@@ -75,7 +62,8 @@ func SetKeyPrefix(keyPrefix string) {
 	keyPrefixMutex.Unlock()
 }
 
-// genConfName returns <executable_basename>_config.ini (lowercased, hyphen becomes underscore).
+// genConfName returns the default configuration file name derived from os.Args[0]
+// (<basename>_config.ini with the basename lowercased and '-' replaced by '_').
 func genConfName() string {
 	_, fileName := filepath.Split(os.Args[0])
 	fileExt := filepath.Ext(os.Args[0])
@@ -88,7 +76,7 @@ func genConfName() string {
 	return configName
 }
 
-// genConfPaths returns parent directories from configPath up to the filesystem root (excluding configPath itself).
+// genConfPaths returns ancestor directory paths from the parent of configPath up to the filesystem root.
 func genConfPaths(configPath string) []string {
 	configPaths := make([]string, 0)
 
@@ -105,7 +93,8 @@ func genConfPaths(configPath string) []string {
 	return configPaths
 }
 
-// analysisConfPath searches confPaths in order for confName; returns the first regular file path or ("", nil) if not found.
+// analysisConfPath returns the path to the first regular file named confName in confPaths,
+// or ("", nil) if none exists. If a matching path names a directory, it returns an error.
 func analysisConfPath(confPaths []string, confName string) (string, error) {
 	for _, confPath := range confPaths {
 		retConfPath := filepath.Join(confPath, confName)
@@ -127,8 +116,8 @@ func analysisConfPath(confPaths []string, confName string) (string, error) {
 	return "", nil
 }
 
-// analysisKey builds uppercased lookup keys with optional prefix and APP_NAME sub-prefix (section::key supported).
-// It returns (originalKey, baseKey) for fallback when scoped keys differ from unscoped.
+// analysisKey builds uppercased lookup keys with optional prefix and APP_NAME sub-prefix.
+// Keys may use SECTION::KEY. It returns (originalKey, baseKey) for fallback when scoped and base forms differ.
 func analysisKey(key string, prefix string, subPrefix string) (string, string) {
 	key = strings.ToUpper(key)
 
@@ -170,19 +159,19 @@ func analysisKey(key string, prefix string, subPrefix string) (string, string) {
 	return "", ""
 }
 
-// ConfData holds parsed INI data and environment overrides; env is checked before INI for each key.
+// ConfData combines environment values with parsed INI data. For each key the environment is consulted first.
 type ConfData struct {
 	iniData *IniData
 
 	envData *EnvData
 }
 
-// Configs is a JSON-friendly list of flat key/value entries (used by Response).
+// Configs is a JSON-serializable list of key/value pairs, typically used with [Response].
 type Configs struct {
 	Configs []*Config `json:"configs"`
 }
 
-// Response groups an error code, message, and optional Configs payload.
+// Response carries an error code, message, and optional structured configuration data.
 type Response struct {
 	Error   int
 	Message string
@@ -190,7 +179,7 @@ type Response struct {
 	Data *Configs `json:"data"`
 }
 
-// loadFromFile searches the working directory and executable directory (and parents) for configName and parses it.
+// loadFromFile locates configName under the working directory and executable directory (and their ancestors) and parses it.
 func loadFromFile(configName string) (*IniData, error) {
 	workPath, err := os.Getwd()
 	if err != nil {
@@ -233,7 +222,7 @@ func loadFromFile(configName string) (*IniData, error) {
 	return iniData, nil
 }
 
-// defaultLoad initializes env storage and merges INI loaded from configName into p.
+// defaultLoad attaches a new [EnvData] to p and merges INI content loaded from configName.
 func (p *ConfData) defaultLoad(configName string) error {
 	if p == nil {
 		return ErrNilConfData
@@ -255,8 +244,9 @@ func (p *ConfData) defaultLoad(configName string) error {
 	return err
 }
 
-// analysisValue expands ${key}, Cartesian-expands $[key] list placeholders, then unescapes $${...}/$$[...].
-// The bool reports whether any ${} or $[] substitution ran (step 3 may still run when false).
+// analysisValue performs ${key} substitution, Cartesian expansion of $[key] list placeholders,
+// and unescaping of $${...} and $$[...] spans. The bool is true if any ${} or $[] substitution ran
+// in the first two phases (the unescape pass may still run when it is false).
 func (p *ConfData) analysisValue(val string) (string, bool, error) {
 	if p == nil {
 		return val, false, ErrNilConfData
@@ -410,7 +400,8 @@ func (p *ConfData) analysisValue(val string) (string, bool, error) {
 	return retVal, isMatch, nil
 }
 
-// LocalKey builds keyPrefix + upper(APP_NAME) + "_" + key when APP_NAME is set; strips keyPrefix if already present.
+// LocalKey returns a key qualified with [GetKeyPrefix] and [DefaultAppName] when APP_NAME is set,
+// after stripping a leading key prefix if present.
 func (p *ConfData) LocalKey(key string) string {
 	appName, ok, err := p.string(DefaultAppName)
 	if err == nil && ok {
@@ -428,7 +419,7 @@ func (p *ConfData) LocalKey(key string) string {
 	return key
 }
 
-// Bool reads a string value and parses it as a boolean.
+// Bool returns the boolean value associated with key. The underlying string is parsed after [ConfData.String] resolution.
 func (p *ConfData) Bool(key string) (bool, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -443,7 +434,7 @@ func (p *ConfData) Bool(key string) (bool, error) {
 	return ret, nil
 }
 
-// DefaultBool is like Bool but returns defaultVal if the key is missing or parsing fails.
+// DefaultBool returns defaultVal if [ConfData.Bool] would fail or the key is missing.
 func (p *ConfData) DefaultBool(key string, defaultVal bool) bool {
 	val, err := p.Bool(key)
 	if err != nil {
@@ -453,7 +444,7 @@ func (p *ConfData) DefaultBool(key string, defaultVal bool) bool {
 	return val
 }
 
-// Int reads and parses the value as a base-10 integer.
+// Int returns the decimal integer associated with key after [ConfData.String] resolution.
 func (p *ConfData) Int(key string) (int, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -468,7 +459,7 @@ func (p *ConfData) Int(key string) (int, error) {
 	return ret, nil
 }
 
-// DefaultInt is like Int but returns defaultVal on error or missing key.
+// DefaultInt returns defaultVal if [ConfData.Int] would fail or the key is missing.
 func (p *ConfData) DefaultInt(key string, defaultVal int) int {
 	val, err := p.Int(key)
 	if err != nil {
@@ -478,7 +469,7 @@ func (p *ConfData) DefaultInt(key string, defaultVal int) int {
 	return val
 }
 
-// Int32 reads and parses the value as a 32-bit integer.
+// Int32 returns the signed 32-bit integer associated with key after [ConfData.String] resolution.
 func (p *ConfData) Int32(key string) (int32, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -493,7 +484,7 @@ func (p *ConfData) Int32(key string) (int32, error) {
 	return int32(ret), nil
 }
 
-// DefaultInt32 is like Int32 but returns defaultVal on error or missing key.
+// DefaultInt32 returns defaultVal if [ConfData.Int32] would fail or the key is missing.
 func (p *ConfData) DefaultInt32(key string, defaultVal int32) int32 {
 	val, err := p.Int32(key)
 	if err != nil {
@@ -503,7 +494,7 @@ func (p *ConfData) DefaultInt32(key string, defaultVal int32) int32 {
 	return val
 }
 
-// Int64 reads and parses the value as a 64-bit integer.
+// Int64 returns the signed 64-bit integer associated with key after [ConfData.String] resolution.
 func (p *ConfData) Int64(key string) (int64, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -518,7 +509,7 @@ func (p *ConfData) Int64(key string) (int64, error) {
 	return ret, nil
 }
 
-// DefaultInt64 is like Int64 but returns defaultVal on error or missing key.
+// DefaultInt64 returns defaultVal if [ConfData.Int64] would fail or the key is missing.
 func (p *ConfData) DefaultInt64(key string, defaultVal int64) int64 {
 	val, err := p.Int64(key)
 	if err != nil {
@@ -528,7 +519,7 @@ func (p *ConfData) DefaultInt64(key string, defaultVal int64) int64 {
 	return val
 }
 
-// Float32 reads and parses the value as a 32-bit float.
+// Float32 returns the 32-bit floating-point value associated with key after [ConfData.String] resolution.
 func (p *ConfData) Float32(key string) (float32, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -543,7 +534,7 @@ func (p *ConfData) Float32(key string) (float32, error) {
 	return float32(ret), nil
 }
 
-// DefaultFloat32 is like Float32 but returns defaultVal on error or missing key.
+// DefaultFloat32 returns defaultVal if [ConfData.Float32] would fail or the key is missing.
 func (p *ConfData) DefaultFloat32(key string, defaultVal float32) float32 {
 	val, err := p.Float32(key)
 	if err != nil {
@@ -553,7 +544,7 @@ func (p *ConfData) DefaultFloat32(key string, defaultVal float32) float32 {
 	return val
 }
 
-// Float64 reads and parses the value as a 64-bit float.
+// Float64 returns the 64-bit floating-point value associated with key after [ConfData.String] resolution.
 func (p *ConfData) Float64(key string) (float64, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -568,7 +559,7 @@ func (p *ConfData) Float64(key string) (float64, error) {
 	return ret, nil
 }
 
-// DefaultFloat64 is like Float64 but returns defaultVal on error or missing key.
+// DefaultFloat64 returns defaultVal if [ConfData.Float64] would fail or the key is missing.
 func (p *ConfData) DefaultFloat64(key string, defaultVal float64) float64 {
 	val, err := p.Float64(key)
 	if err != nil {
@@ -578,7 +569,7 @@ func (p *ConfData) DefaultFloat64(key string, defaultVal float64) float64 {
 	return val
 }
 
-// Duration reads and parses the value with time.ParseDuration.
+// Duration returns the duration associated with key, parsed with [time.ParseDuration] after [ConfData.String] resolution.
 func (p *ConfData) Duration(key string) (time.Duration, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -593,7 +584,7 @@ func (p *ConfData) Duration(key string) (time.Duration, error) {
 	return ret, nil
 }
 
-// DefaultDuration is like Duration but returns defaultVal on error or missing key.
+// DefaultDuration returns defaultVal if [ConfData.Duration] would fail or the key is missing.
 func (p *ConfData) DefaultDuration(key string, defaultVal time.Duration) time.Duration {
 	val, err := p.Duration(key)
 	if err != nil {
@@ -603,7 +594,8 @@ func (p *ConfData) DefaultDuration(key string, defaultVal time.Duration) time.Du
 	return val
 }
 
-// String returns the fully expanded string value (env, INI, then ${} / $[] interpolation, up to 10 nesting levels).
+// String returns the fully expanded value for key: environment and INI resolution, then up to ten rounds
+// of ${} and $[] interpolation.
 func (p *ConfData) String(key string) (string, error) {
 	val, ok, err := p.stringEx(key)
 	if ok {
@@ -635,7 +627,7 @@ func (p *ConfData) String(key string) (string, error) {
 	return "", terror.ErrDataNotExist(key)
 }
 
-// stringEx resolves key using APP_NAME-scoped and base forms; checks env then INI.
+// stringEx resolves key using APP_NAME-scoped and base key forms, consulting the environment before INI.
 func (p *ConfData) stringEx(key string) (string, bool, error) {
 	appName, ok, err := p.string(DefaultAppName)
 	if !ok || err != nil {
@@ -660,7 +652,8 @@ func (p *ConfData) stringEx(key string) (string, bool, error) {
 	return val, ok, err
 }
 
-// string reads a raw value by key from env first, then INI. A nil receiver yields ErrNilConfData.
+// string returns the raw value for key from the environment if present, otherwise from INI.
+// A nil receiver returns [ErrNilConfData].
 func (p *ConfData) string(key string) (string, bool, error) {
 	if p == nil {
 		return "", false, ErrNilConfData
@@ -683,7 +676,7 @@ func (p *ConfData) string(key string) (string, bool, error) {
 	return "", false, nil
 }
 
-// DefaultString is like String but returns defaultVal on error or missing key.
+// DefaultString returns defaultVal if [ConfData.String] would fail or the key is missing.
 func (p *ConfData) DefaultString(key string, defaultVal string) string {
 	val, err := p.String(key)
 	if err != nil {
@@ -693,7 +686,7 @@ func (p *ConfData) DefaultString(key string, defaultVal string) string {
 	return val
 }
 
-// Strings splits String(key) by sep (empty single field becomes an empty slice).
+// Strings splits the expanded [ConfData.String] value for key using sep. A single empty field yields an empty slice.
 func (p *ConfData) Strings(key string, sep string) ([]string, error) {
 	val, err := p.String(key)
 	if err != nil {
@@ -709,7 +702,7 @@ func (p *ConfData) Strings(key string, sep string) ([]string, error) {
 	return vals, nil
 }
 
-// DefaultStrings is like Strings but returns defaultVals on error or missing key.
+// DefaultStrings returns defaultVals if [ConfData.Strings] would fail or the key is missing.
 func (p *ConfData) DefaultStrings(key string, sep string, defaultVals []string) []string {
 	val, err := p.Strings(key, sep)
 	if err != nil {
@@ -719,7 +712,7 @@ func (p *ConfData) DefaultStrings(key string, sep string, defaultVals []string) 
 	return val
 }
 
-// DebugToString returns a short debug dump of INI section data as JSON, or a placeholder when nil.
+// DebugToString returns a human-readable summary of parsed INI data, or a placeholder if p or INI data is nil.
 func (p *ConfData) DebugToString() string {
 	if p == nil {
 		return "ini config data: <nil>."

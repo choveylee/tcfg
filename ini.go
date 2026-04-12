@@ -1,11 +1,3 @@
-/**
- * @Author: lidonglin
- * @Description:
- * @File:  ini.go
- * @Version: 1.0.0
- * @Date: 2022/11/03 10:35
- */
-
 package tcfg
 
 import (
@@ -22,34 +14,38 @@ import (
 	"time"
 )
 
-// Config is one key/value pair; Key may use "SECTION::KEY" to target a non-default section.
+// Config is a single key/value row. Key may use the form SECTION::KEY to select a non-default section.
 type Config struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
 var (
-	// DefaultSection is the INI section used when no "[section]" header applies.
+	// DefaultSection names the section used when no [section] header has been read yet.
 	DefaultSection = "default"
 
-	// NumCommentStr marks line comments when a line starts with '#'.
+	// NumCommentStr is the prefix of '#' line comments.
 	NumCommentStr = []byte{'#'}
-	// SemCommentStr marks line comments when a line starts with ';'.
+	// SemCommentStr is the prefix of ';' line comments.
 	SemCommentStr = []byte{';'}
 
+	// EmptyStr is an empty byte slice used in line scanning.
 	EmptyStr = []byte{}
+	// EqualStr is the '=' delimiter between keys and values.
 	EqualStr = []byte{'='}
+	// QuoteStr is the double-quote byte used to detect quoted values.
 	QuoteStr = []byte{'"'}
 
+	// SectionStartStr and SectionEndStr delimit INI section headers.
 	SectionStartStr = []byte{'['}
 	SectionEndStr   = []byte{']'}
 )
 
-// IniMgr parses INI text from disk or from in-memory Config rows.
+// IniMgr parses INI text from files or from in-memory [Config] rows.
 type IniMgr struct {
 }
 
-// ParseFile reads an INI file; an empty filePath returns an empty IniData without error.
+// ParseFile reads and parses the file at filePath. An empty filePath yields an empty [IniData] without error.
 func (p *IniMgr) ParseFile(filePath string) (*IniData, error) {
 	if filePath == "" {
 		iniData := &IniData{
@@ -69,7 +65,7 @@ func (p *IniMgr) ParseFile(filePath string) (*IniData, error) {
 	return p.parseFile(filePath)
 }
 
-// ParseConfig builds IniData from programmatic key/value pairs (keys uppercased; values may be quoted).
+// ParseConfig builds an [IniData] from configs. Keys are uppercased; values may be surrounded by quotes.
 func (p *IniMgr) ParseConfig(configs []*Config) (*IniData, error) {
 	iniData := &IniData{
 		filePath: "config",
@@ -111,7 +107,7 @@ func (p *IniMgr) ParseConfig(configs []*Config) (*IniData, error) {
 	return iniData, nil
 }
 
-// parseFile reads bytes from disk and delegates to parseData with the file's directory for relative includes.
+// parseFile reads filePath and parses its contents; relative include paths resolve against the file's directory.
 func (p *IniMgr) parseFile(filePath string) (*IniData, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -121,7 +117,8 @@ func (p *IniMgr) parseFile(filePath string) (*IniData, error) {
 	return p.parseData(filepath.Dir(filePath), data)
 }
 
-// parseData scans INI lines: UTF-8 BOM strip, sections, key=value, include "path", and line continuations for comments.
+// parseData parses INI content from data. It strips a UTF-8 BOM, handles [section] headers, key=value lines,
+// include "path" directives, and comment blocks associated with sections or keys.
 func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 	iniData := &IniData{
 		data: make(map[string]map[string]string),
@@ -289,8 +286,10 @@ func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 	return iniData, nil
 }
 
-// IniData stores section/name/value maps with optional comment metadata.
-// Get* accessors use SECTION::KEY; missing keys return ok=false (or zero) without error; parse errors surface from Bool/Int/etc.
+// IniData holds per-section key/value maps and optional comment metadata.
+//
+// Getters accept keys in the form SECTION::KEY; missing keys yield ok == false or zero values without an error.
+// Parse errors are returned from typed accessors such as [IniData.Bool] and [IniData.Int].
 type IniData struct {
 	filePath string
 
@@ -302,7 +301,7 @@ type IniData struct {
 	sync.RWMutex
 }
 
-// GetData returns a deep copy of all section data; callers may modify the returned maps safely.
+// GetData returns a deep copy of all section maps. The caller may modify the returned maps without affecting p.
 func (p *IniData) GetData() map[string]map[string]string {
 	p.RLock()
 	defer p.RUnlock()
@@ -326,7 +325,7 @@ func (p *IniData) GetData() map[string]map[string]string {
 	return iniData
 }
 
-// GetBool returns the bool value, whether the key existed, and a parse error if the string was invalid.
+// GetBool returns the boolean value, whether the key exists, and a parse error if the stored string is not a valid boolean.
 func (p *IniData) GetBool(key string) (bool, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -338,14 +337,14 @@ func (p *IniData) GetBool(key string) (bool, bool, error) {
 	return ret, true, err
 }
 
-// Bool returns GetBool's value or false when the key is missing.
+// Bool returns the value from [IniData.GetBool], or false when the key is missing.
 func (p *IniData) Bool(key string) (bool, error) {
 	val, _, err := p.GetBool(key)
 
 	return val, err
 }
 
-// DefaultBool returns defaultVal when the key is missing or parsing fails.
+// DefaultBool returns defaultVal when the key is missing or [IniData.GetBool] reports a parse error.
 func (p *IniData) DefaultBool(key string, defaultVal bool) bool {
 	val, ok, err := p.GetBool(key)
 	if !ok || err != nil {
@@ -355,7 +354,7 @@ func (p *IniData) DefaultBool(key string, defaultVal bool) bool {
 	return val
 }
 
-// GetInt parses a decimal integer; ok is false when the key is missing.
+// GetInt parses the value as a base-10 integer. The second return value is false when the key is missing.
 func (p *IniData) GetInt(key string) (int, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -367,14 +366,14 @@ func (p *IniData) GetInt(key string) (int, bool, error) {
 	return ret, true, err
 }
 
-// Int is like GetInt but returns 0 when the key is missing.
+// Int returns the value from [IniData.GetInt], or zero when the key is missing.
 func (p *IniData) Int(key string) (int, error) {
 	val, _, err := p.GetInt(key)
 
 	return val, err
 }
 
-// DefaultInt returns defaultVal when the key is missing or parsing fails.
+// DefaultInt returns defaultVal when the key is missing or [IniData.GetInt] fails to parse.
 func (p *IniData) DefaultInt(key string, defaultVal int) int {
 	val, ok, err := p.GetInt(key)
 	if !ok || err != nil {
@@ -384,7 +383,7 @@ func (p *IniData) DefaultInt(key string, defaultVal int) int {
 	return val
 }
 
-// GetInt64 parses a base-10 64-bit integer; ok is false when the key is missing.
+// GetInt64 parses the value as a base-10 64-bit integer. The second return value is false when the key is missing.
 func (p *IniData) GetInt64(key string) (int64, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -396,14 +395,14 @@ func (p *IniData) GetInt64(key string) (int64, bool, error) {
 	return ret, true, err
 }
 
-// Int64 is like GetInt64 but returns 0 when the key is missing.
+// Int64 returns the value from [IniData.GetInt64], or zero when the key is missing.
 func (p *IniData) Int64(key string) (int64, error) {
 	val, _, err := p.GetInt64(key)
 
 	return val, err
 }
 
-// DefaultInt64 returns defaultVal when the key is missing or parsing fails.
+// DefaultInt64 returns defaultVal when the key is missing or [IniData.GetInt64] fails to parse.
 func (p *IniData) DefaultInt64(key string, defaultVal int64) int64 {
 	val, ok, err := p.GetInt64(key)
 	if !ok || err != nil {
@@ -413,7 +412,7 @@ func (p *IniData) DefaultInt64(key string, defaultVal int64) int64 {
 	return val
 }
 
-// GetFloat parses a float64; ok is false when the key is missing.
+// GetFloat parses the value as a 64-bit floating-point number. The second return value is false when the key is missing.
 func (p *IniData) GetFloat(key string) (float64, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -425,14 +424,14 @@ func (p *IniData) GetFloat(key string) (float64, bool, error) {
 	return ret, true, err
 }
 
-// Float is like GetFloat but returns 0 when the key is missing.
+// Float returns the value from [IniData.GetFloat], or zero when the key is missing.
 func (p *IniData) Float(key string) (float64, error) {
 	val, _, err := p.GetFloat(key)
 
 	return val, err
 }
 
-// DefaultFloat returns defaultVal when the key is missing or parsing fails.
+// DefaultFloat returns defaultVal when the key is missing or [IniData.GetFloat] fails to parse.
 func (p *IniData) DefaultFloat(key string, defaultVal float64) float64 {
 	val, ok, err := p.GetFloat(key)
 	if !ok || err != nil {
@@ -442,7 +441,7 @@ func (p *IniData) DefaultFloat(key string, defaultVal float64) float64 {
 	return val
 }
 
-// GetDuration parses a duration string; ok is false when the key is missing.
+// GetDuration parses the value with [time.ParseDuration]. The second return value is false when the key is missing.
 func (p *IniData) GetDuration(key string) (time.Duration, bool, error) {
 	val, ok := p.getData(key)
 	if !ok {
@@ -454,14 +453,14 @@ func (p *IniData) GetDuration(key string) (time.Duration, bool, error) {
 	return ret, true, err
 }
 
-// Duration is like GetDuration but returns 0 when the key is missing.
+// Duration returns the value from [IniData.GetDuration], or zero when the key is missing.
 func (p *IniData) Duration(key string) (time.Duration, error) {
 	val, _, err := p.GetDuration(key)
 
 	return val, err
 }
 
-// DefaultDuration returns defaultVal when the key is missing or parsing fails.
+// DefaultDuration returns defaultVal when the key is missing or [IniData.GetDuration] fails to parse.
 func (p *IniData) DefaultDuration(key string, defaultVal time.Duration) time.Duration {
 	val, ok, err := p.GetDuration(key)
 	if !ok || err != nil {
@@ -471,19 +470,19 @@ func (p *IniData) DefaultDuration(key string, defaultVal time.Duration) time.Dur
 	return val
 }
 
-// GetString returns the raw string for SECTION::KEY or the default section.
+// GetString returns the raw string value for SECTION::KEY, or for the default section when no section is given.
 func (p *IniData) GetString(key string) (string, bool) {
 	return p.getData(key)
 }
 
-// String returns GetString's value or "" when missing (no error distinction).
+// String returns the value from [IniData.GetString], or an empty string when the key is missing.
 func (p *IniData) String(key string) string {
 	val, _ := p.GetString(key)
 
 	return val
 }
 
-// DefaultString returns defaultVal when the key is absent.
+// DefaultString returns defaultVal when the key is missing.
 func (p *IniData) DefaultString(key string, defaultVal string) string {
 	val, ok := p.GetString(key)
 	if !ok {
@@ -493,7 +492,7 @@ func (p *IniData) DefaultString(key string, defaultVal string) string {
 	return val
 }
 
-// GetStrings splits the string value by sep; ok is false when the key is missing.
+// GetStrings splits the string value using sep. The second return value is false when the key is missing.
 func (p *IniData) GetStrings(key string, sep string) ([]string, bool) {
 	vals, ok := p.GetString(key)
 	if !ok {
@@ -505,7 +504,7 @@ func (p *IniData) GetStrings(key string, sep string) ([]string, bool) {
 	return ret, true
 }
 
-// Strings returns GetStrings' slice or nil when the key is missing.
+// Strings returns the slice from [IniData.GetStrings], or nil when the key is missing.
 func (p *IniData) Strings(key string, sep string) []string {
 	vals, _ := p.GetStrings(key, sep)
 
@@ -522,7 +521,7 @@ func (p *IniData) DefaultStrings(key string, sep string, defaultVals []string) [
 	return vals
 }
 
-// getData resolves an uppercased SECTION::KEY into the nested map (thread-safe read lock).
+// getData returns the value for an uppercased SECTION::KEY under the read lock.
 func (p *IniData) getData(key string) (string, bool) {
 	if key == "" {
 		return "", false
@@ -551,7 +550,7 @@ func (p *IniData) getData(key string) (string, bool) {
 	return val, ok
 }
 
-// toString JSON-encodes all section maps for debugging.
+// toString returns a JSON representation of all section data for debugging.
 func (p *IniData) toString() (string, error) {
 	p.RLock()
 	defer p.RUnlock()
@@ -561,7 +560,7 @@ func (p *IniData) toString() (string, error) {
 	return string(data), err
 }
 
-// parseBool converts common string/int/bool representations into a bool (used by IniData and ConfData paths).
+// parseBool interprets val as a boolean. Supported forms include common string literals and numeric 0/1 for integer and float64 types.
 func parseBool(val interface{}) (value bool, err error) {
 	if val != nil {
 		switch v := val.(type) {
