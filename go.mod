@@ -3,7 +3,7 @@ module github.com/choveylee/tcfg
 go 1.26.1
 
 require (
-	github.com/choveylee/terror v0.0.0-20260326134102-85a07a5f5a35
+	github.com/choveylee/terror v0.0.0-20260412034942-5ce61c9302af
 	github.com/stretchr/testify v1.11.1
 )
 

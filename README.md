@@ -1,64 +1,51 @@
 # tcfg
 
-[English](#english) · [中文](#中文)
+[![Go Reference](https://pkg.go.dev/badge/github.com/choveylee/tcfg.svg)](https://pkg.go.dev/github.com/choveylee/tcfg)
 
----
+Small Go library for **INI** files plus **environment variables**, optional **key prefix** and **`APP_NAME`** scoping, and value expansion with **`${key}`** and **`$[key]`** (with **`$${...}` / `$$[...]`** escapes for literal `$`).
 
-## English
+## Features
 
-**tcfg** is a small Go library that loads **INI** configuration together with **environment variables**, applies an optional **key prefix** and **`APP_NAME`**-based key scoping, and expands values using **`${key}`** and **`$[key]`** placeholders (with **`$${...}` / `$$[...]`** escapes for literal dollar signs).
+- Merge **env** (first) and **INI** values for the same logical key
+- Resolve **`SECTION::KEY`** (INI); env uses **`KEY_SECTION`**
+- Optional global key prefix and per-app scoping via **`APP_NAME`**
+- **`${name}`** string interpolation and **`$[name]`** list expansion (Cartesian product when multiple appear)
+- **`IniMgr` / `IniData`** for file or in-memory INI without the package `init` path
 
-### Requirements
+## Requirements
 
-- Go **1.26.1** or newer (see `go.mod`).
+- Go **1.26.1** or later (see [`go.mod`](go.mod))
 
-### Install
+## Installation
 
 ```bash
 go get github.com/choveylee/tcfg
 ```
 
-### Quick start
+## Usage
 
-After import, the package runs **`init`**, loads **`<executable_basename>_config.ini`** (executable name lowercased, `-` → `_`), and exposes package-level helpers (`String`, `Bool`, `Int`, …) backed by a default **`ConfData`** instance. If loading fails, **`init` panics**.
+### Package-level API
+
+Importing the package runs **`init`**, which loads **`<executable_basename>_config.ini`** (basename lowercased, `-` → `_`) and wires package-level helpers (`tcfg.String`, `tcfg.Bool`, …) to a default **`ConfData`**. If that load path fails in a way that returns an error (for example I/O or parse errors on a found file), **`init` panics**.
 
 ```go
 import "github.com/choveylee/tcfg"
 
-func main() {
+func example() {
     v, err := tcfg.String("MY_KEY")
     if err != nil {
-        // handle: missing key, parse error, etc.
+        // missing key, parse error, nested expansion failure, etc.
+        return
     }
     _ = v
 }
 ```
 
-### Configuration file lookup
+Use this when you want env + INI + `${}` / `$[]` behavior without constructing **`ConfData`** yourself (its fields are not exported).
 
-`loadFromFile` looks for `<executable_basename>_config.ini` by checking the **current working directory**, then the **executable’s directory**, then **ancestor directories** up to the filesystem root for both (same order as in code: work path, app path, then their parent chains). Relative `include "other.ini"` entries resolve from the including file’s directory.
+### INI-only (`IniMgr`)
 
-### Environment variables
-
-- Lookups consult **environment first**, then INI.  
-- Keys may use **`SECTION::KEY`**; for env this maps to **`KEY_SECTION`** (see `EnvData`).
-
-### Key prefix and `APP_NAME`
-
-- **`GetKeyPrefix` / `SetKeyPrefix`** set a global prefix used when resolving keys (safe for concurrent read/write with the mutex-backed implementation).  
-- If **`APP_NAME`** is set, keys can be resolved with an extra **normalized app** segment (uppercase, `-` → `_`) for localized/runtime-specific names.
-
-### Value interpolation
-
-| Syntax | Meaning |
-|--------|---------|
-| `${NAME}` | Replace with the string value of key `NAME` (after env/ini resolution). Prefix `$$` skips expansion; pass-through is normalized in a final step so **`$${x}`** becomes **`${x}`** literally. |
-| `$[NAME]` | Replace with **each** value of the list stored at `NAME` (split by comma by default), producing a Cartesian product when multiple `$[]` appear (see existing tests / `STRING_E` example). |
-| **Nesting** | Up to **10** rounds of `${}` / `$[]` expansion per **`String`** call. |
-
-### Using `IniMgr` / `IniData`
-
-For **INI-only** access (no package `init`, no env+INI merge), use `IniMgr`:
+For parsing INI only—no package `init`, no automatic env merge—use **`IniMgr`**:
 
 ```go
 mgr := &tcfg.IniMgr{}
@@ -66,107 +53,48 @@ ini, err := mgr.ParseFile("app.ini")
 if err != nil {
     log.Fatal(err)
 }
-val, ok := ini.GetString("MY_KEY")
-```
-
-`ParseConfig` can build data from in-memory `[]*tcfg.Config` rows. **`ConfData` struct fields are not exported**, so code outside this module cannot assemble a custom `ConfData` that combines env, INI, and `${}` / `$[]` expansion; use the **package-level** `String` / `Bool` / … helpers for that behavior, or fork and add an exported constructor.
-
-### Errors
-
-- **`tcfg.ErrNilConfData`**: calling methods on a **`nil *ConfData`**.  
-- Key missing / nested resolution failures may use **`github.com/choveylee/terror`** (e.g. `ErrDataNotExist`).
-
-### Testing
-
-```bash
-go test ./...
-```
-
-### License
-
-*(Add your license here.)*
-
----
-
-## 中文
-
-**tcfg** 是一个轻量 Go 库，用于在加载 **INI 文件** 的同时合并 **环境变量**，支持可选 **键前缀**、基于 **`APP_NAME`** 的键作用域，并在配置值里展开 **`${key}`**、**`$[key]`** 占位符（通过 **`$${...}` / `$$[...]`** 转义得到字面量 `$` 形式）。
-
-### 环境要求
-
-- **Go 1.26.1** 及以上（见 `go.mod`）。
-
-### 安装
-
-```bash
-go get github.com/choveylee/tcfg
-```
-
-### 快速开始
-
-`import` 后，包会在 **`init`** 中加载 `<可执行文件名>_config.ini`（文件名小写，`-` 转为 `_`），并用默认的 **`ConfData`** 提供包级函数（`String`、`Bool`、`Int` 等）。若加载失败，**`init` 会直接 `panic`**。
-
-```go
-import "github.com/choveylee/tcfg"
-
-func main() {
-    v, err := tcfg.String("MY_KEY")
-    if err != nil {
-        // 处理缺失键、解析错误等
-    }
+if v, ok := ini.GetString("MY_KEY"); ok {
     _ = v
 }
 ```
 
-### 配置文件查找顺序
+Build data from slices with **`ParseConfig`**. INI parsing supports sections, **`include "path"`** (relative paths resolved from the including file’s directory), UTF-8 BOM, and line comments (`#`, `;`).
 
-`loadFromFile` 按顺序查找 `<可执行文件名>_config.ini`：先 **当前工作目录** 与 **可执行文件目录**，再分别向**文件系统根目录**回溯上级目录。INI 里的 `include "其它.ini"` 会相对于**当前被解析文件**所在目录解析相对路径。
+## Configuration file discovery
 
-### 环境变量
+The default loader searches for **`<executable_basename>_config.ini`** in this order:
 
-- 读配置时 **先查环境变量，再查 INI**。  
-- 支持 **`SECTION::KEY`** 形式；在环境变量侧会映射为 **`KEY_SECTION`**（见 `EnvData`）。
+1. Current working directory  
+2. Directory of the executable  
+3. Ancestor directories of (1), then of (2), walking toward the filesystem root  
 
-### 键前缀与 `APP_NAME`
+The first regular file match wins. If no file is found, loading still succeeds with empty INI data (see implementation).
 
-- **`GetKeyPrefix` / `SetKeyPrefix`**：全局键前缀（实现上带读写锁，可与读取并发安全配合）。  
-- 若配置了 **`APP_NAME`**，解析键时可使用规范化后的应用名段（大写、`-` → `_`），用于多应用/本地键名组合。
+## Environment variables
 
-### 值内插值
+- Lookups try **environment first**, then INI.  
+- Keys may use **`SECTION::KEY`**. In the environment layer this maps to **`KEY_SECTION`** (see **`EnvData`**).
 
-| 语法 | 含义 |
-|------|------|
-| `${NAME}` | 替换为键 `NAME` 解析后的字符串（走环境变量与 INI）。前缀多写一个 `$` 可跳过本次展开；后处理会把 **`$${x}`** 还原成字面上的 **`${x}`**。 |
-| `$[NAME]` | 将 `NAME` 处的**列表值**（默认按逗号拆分）展开；多个 **`$[]`** 会做笛卡尔组合（可参考测试与示例里的 `STRING_E`）。 |
-| **嵌套** | 每次 **`String`** 调用内，最多 **10** 轮 `${}` / `$[]` 展开。 |
+## Key prefix and `APP_NAME`
 
-### 直接使用 `IniMgr` / `IniData`
+- **`GetKeyPrefix`** / **`SetKeyPrefix`** set a global prefix applied during key resolution (safe for concurrent use with the internal mutex).  
+- If **`APP_NAME`** is set, keys can include an extra normalized segment (uppercase, `-` → `_`) for app-specific names (**`LocalKey`** and related resolution).
 
-若不想依赖包级 `init` 或需要只读 INI，可用 **`IniMgr.ParseFile`** / **`ParseConfig`** 得到 **`IniData`**，再调用 **`GetString`、`GetInt`** 等。
+## Value interpolation
 
-```go
-mgr := &tcfg.IniMgr{}
-ini, err := mgr.ParseFile("app.ini")
-if err != nil {
-    log.Fatal(err)
-}
-v, ok := ini.GetString("MY_KEY")
-_ = v; _ = ok
-```
+| Syntax | Behavior |
+|--------|----------|
+| **`${NAME}`** | Replaced with the resolved string value of **`NAME`**. A leading **`$$`** skips that match; a later pass turns **`$${x}`** into literal **`${x}`**. |
+| **`$[NAME]`** | Splits the value at **`NAME`** by the default separator (comma) and expands each token; multiple **`$[...]`** placeholders produce a Cartesian product over those lists. |
+| **Nesting** | Up to **10** rounds of **`${}`** / **`$[]`** expansion per **`String`** call. |
 
-说明：**`ConfData` 的字段未导出**，外部模块无法自行拼装 `ConfData`；合并「环境 + INI + 插值」请使用包级 API，或在同仓库内扩展导出构造函数（若你有此需求可自行添加）。
+Interpolation regexes are compiled lazily on first use; accessors are **`ValStringKeyMatchReg()`**, **`ValStringsKeyMatchReg()`**, and **`ValStringKeyReplaceReg()`**.
 
-### 错误说明
+## Errors
 
-- **`tcfg.ErrNilConfData`**：在 **`nil *ConfData`** 上调用方法。  
-- 缺失键、嵌套解析失败等可能来自 **`github.com/choveylee/terror`**（例如 `ErrDataNotExist`)。
+- **`tcfg.ErrNilConfData`**: method called on a **`nil *ConfData`**.  
+- Missing keys and some nested-resolution failures may surface errors from **`github.com/choveylee/terror`** (for example **`ErrDataNotExist`**).
 
-### 测试
+## License
 
-```bash
-go test ./...
-```
-
-### 许可证
-
-*（在此补充你的许可证声明。）*
+Add your license here.

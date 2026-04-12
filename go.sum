@@ -1,14 +1,7 @@
-github.com/choveylee/tconst v0.0.0-20250407232812-701038143d1d h1:PUlMMfPDt+r2OXzAZ7FD/13aAg4sglBtnFd8n1klC90=
-github.com/choveylee/tconst v0.0.0-20250407232812-701038143d1d/go.mod h1:PHLsldLEEaIkw+7X5NH3VtONIBAiNeW3KHYdDyJ+fd4=
-github.com/choveylee/terror v0.0.0-20260326134102-85a07a5f5a35 h1:y3242kUmbl3FOWU1UrNr7h2P99AzYy6uMSi4yeWtw2k=
-github.com/choveylee/terror v0.0.0-20260326134102-85a07a5f5a35/go.mod h1:JJqgA8e0MDvQomOtSRRMi9rzskwTw5+N7LIrbH3M4GU=
-github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+github.com/choveylee/terror v0.0.0-20260412034942-5ce61c9302af h1:hDoDJ/t2UtGFFWifuLGMoRdWyqz2Sr2N5pVE3dID+Ws=
+github.com/choveylee/terror v0.0.0-20260412034942-5ce61c9302af/go.mod h1:YvL4CAbFbk+FuulsbcoPivIN1vWaJZ+D8oKIp6G5vAo=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
-gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=

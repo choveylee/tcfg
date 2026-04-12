@@ -12,7 +12,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -261,7 +260,7 @@ func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 		}
 
 		if len(params) != 2 {
-			return nil, errors.New("read the content error: \"" + string(line) + "\", should key = val")
+			return nil, fmt.Errorf("tcfg: invalid line: expected key=value, got %q", string(line))
 		}
 
 		val := bytes.TrimSpace(params[1])
