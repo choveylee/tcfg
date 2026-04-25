@@ -36,8 +36,8 @@ const (
 	DefaultAppName = "APP_NAME"
 )
 
-// ErrNilConfData is returned when a method is called on a nil *ConfData receiver.
-var ErrNilConfData = errors.New("tcfg: method called on nil *ConfData receiver")
+// ErrNilConfData is returned when a method is invoked on a nil *ConfData receiver.
+var ErrNilConfData = errors.New("tcfg: a nil *ConfData receiver was used")
 
 var (
 	keyPrefixMutex sync.RWMutex
@@ -62,50 +62,72 @@ func SetKeyPrefix(keyPrefix string) {
 	keyPrefixMutex.Unlock()
 }
 
-// genConfName returns the default configuration file name derived from os.Args[0]
+// genConfName returns the default configuration file name derived from the current executable path
 // (<basename>_config.ini with the basename lowercased and '-' replaced by '_').
 func genConfName() string {
-	_, fileName := filepath.Split(os.Args[0])
-	fileExt := filepath.Ext(os.Args[0])
+	execPath, err := os.Executable()
+	if err != nil {
+		execPath = os.Args[0]
+	}
+
+	fileName := execPath
+	if index := strings.LastIndexAny(execPath, `/\`); index >= 0 {
+		fileName = execPath[index+1:]
+	}
+
+	fileExt := filepath.Ext(fileName)
 
 	appName := strings.TrimSuffix(fileName, fileExt)
 	appName = strings.ToLower(strings.ReplaceAll(appName, "-", "_"))
 
-	configName := fmt.Sprintf("%s_config.ini", appName)
-
-	return configName
+	return fmt.Sprintf("%s_config.ini", appName)
 }
 
-// genConfPaths returns ancestor directory paths from the parent of configPath up to the filesystem root.
-func genConfPaths(configPath string) []string {
-	configPaths := make([]string, 0)
+// genConfDirs returns ancestor directory paths from the parent of configPath up to the filesystem root.
+func genConfDirs(configDir string) []string {
+	configDirs := make([]string, 0)
 
 	for {
-		tmpConfigPath := filepath.Dir(configPath)
-		if tmpConfigPath == configPath {
+		tmpConfigDir := filepath.Dir(configDir)
+		if tmpConfigDir == configDir {
 			break
 		}
 
-		configPath = tmpConfigPath
-		configPaths = append(configPaths, configPath)
+		configDir = tmpConfigDir
+		configDirs = append(configDirs, configDir)
 	}
 
-	return configPaths
+	return configDirs
 }
 
-// analysisConfPath returns the path to the first regular file named confName in confPaths,
-// or ("", nil) if none exists. If a matching path names a directory, it returns an error.
-func analysisConfPath(confPaths []string, confName string) (string, error) {
-	for _, confPath := range confPaths {
-		retConfPath := filepath.Join(confPath, confName)
+// getExecDir returns the directory of the current executable.
+func getExecDir() (string, error) {
+	execPath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
 
-		file, err := os.Stat(retConfPath)
+	execPath, err = filepath.Abs(execPath)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Dir(execPath), nil
+}
+
+// analysisConfDir returns the path to the first regular file named confName in confDirs,
+// or ("", nil) if none exists. If a matching path names a directory, it returns an error.
+func analysisConfDir(confDirs []string, confName string) (string, error) {
+	for _, confDir := range confDirs {
+		confPath := filepath.Join(confDir, confName)
+
+		file, err := os.Stat(confPath)
 		if err == nil {
 			if file.IsDir() {
-				return "", terror.ErrConfIllegal(retConfPath)
+				return "", terror.ErrConfInvalid(confPath)
 			}
 
-			return retConfPath, nil
+			return confPath, nil
 		}
 
 		if !os.IsNotExist(err) {
@@ -181,33 +203,33 @@ type Response struct {
 
 // loadFromFile locates configName under the working directory and executable directory (and their ancestors) and parses it.
 func loadFromFile(configName string) (*IniData, error) {
-	workPath, err := os.Getwd()
+	workDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
-	appPath, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	appDir, err := getExecDir()
 	if err != nil {
 		return nil, err
 	}
 
-	extConfigPaths := make([]string, 0)
+	extConfigDirs := make([]string, 0)
 
-	workConfigPaths := genConfPaths(workPath)
-	appConfigPaths := genConfPaths(appPath)
+	workConfigDirs := genConfDirs(workDir)
+	appConfigDirs := genConfDirs(appDir)
 
-	extConfigPaths = append(extConfigPaths, workConfigPaths...)
-	extConfigPaths = append(extConfigPaths, appConfigPaths...)
+	extConfigDirs = append(extConfigDirs, workConfigDirs...)
+	extConfigDirs = append(extConfigDirs, appConfigDirs...)
 
-	// get config file from cmd work path > app path
-	configPaths := []string{
-		workPath,
-		appPath,
+	// Search the current working directory before the executable directory.
+	configDirs := []string{
+		workDir,
+		appDir,
 	}
 
-	configPaths = append(configPaths, extConfigPaths...)
+	configDirs = append(configDirs, extConfigDirs...)
 
-	configPath, err := analysisConfPath(configPaths, configName)
+	configPath, err := analysisConfDir(configDirs, configName)
 	if err != nil {
 		return nil, err
 	}

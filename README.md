@@ -2,15 +2,16 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/choveylee/tcfg.svg)](https://pkg.go.dev/github.com/choveylee/tcfg)
 
-Go library that loads **INI** files together with **environment variables**, applies an optional **key prefix** and **`APP_NAME`**-based scoping, and expands values using **`${key}`** and **`$[key]`** placeholders (with **`$${...}` / `$$[...]`** escapes for literal `$`).
+`tcfg` is a Go library for loading configuration from **INI** files and **environment variables**. It supports optional **key prefixes**, **`APP_NAME`**-based scoping, and value expansion through **`${key}`** and **`$[key]`** placeholders, with **`$${...}`** and **`$$[...]`** available for literal dollar signs.
 
 ## Features
 
-- **Environment first**, then **INI**, for the same logical key
-- **`SECTION::KEY`** in INI; environment lookups use **`KEY_SECTION`**
-- Optional global key prefix (**`GetKeyPrefix` / `SetKeyPrefix`**) and per-app keys when **`APP_NAME`** is set
-- **`${name}`** interpolation and **`$[name]`** list expansion (Cartesian product when multiple **`$[]`** appear)
-- **`IniMgr` / `IniData`** for file or in-memory INI without relying on package **`init`**
+- Environment values take precedence over INI values for the same logical key
+- INI keys may use **`SECTION::KEY`**; environment lookups use **`KEY_SECTION`**
+- Global key prefixes are supported through **`GetKeyPrefix`** and **`SetKeyPrefix`**
+- Per-application key scoping is available when **`APP_NAME`** is set
+- **`${name}`** interpolation and **`$[name]`** list expansion are supported
+- **`IniMgr`** and **`IniData`** may be used directly without relying on package **`init`**
 
 ## Requirements
 
@@ -24,13 +25,13 @@ go get github.com/choveylee/tcfg
 
 ## Dependencies
 
-- [`github.com/choveylee/terror`](https://github.com/choveylee/terror) — errors such as `ErrDataNotExist` for missing keys in some paths
+- [`github.com/choveylee/terror`](https://github.com/choveylee/terror) — provides shared error values such as `ErrDataNotExist`
 
 ## Usage
 
 ### Package-level API
 
-Importing the package runs **`init`**, which resolves **`<executable_basename>_config.ini`** (basename lowercased, `-` → `_`) and binds package-level helpers (`tcfg.String`, `tcfg.Bool`, …) to a default **`ConfData`**. **`init` panics** if loading fails with an error (for example I/O failure or a parse error on an existing config file).
+Importing the package initializes a default **`ConfData`**, resolves a configuration file named **`<executable_basename>_config.ini`** (basename lowercased, with `-` replaced by `_`), and binds package-level helpers such as `tcfg.String` and `tcfg.Bool` to that instance. The search checks the current working directory first and then the directory containing the current executable (via **`os.Executable`**). If initialization fails, package initialization panics.
 
 ```go
 import "github.com/choveylee/tcfg"
@@ -45,11 +46,11 @@ func example() {
 }
 ```
 
-**`ConfData` fields are not exported**; use these helpers (or fork and expose a constructor) for env + INI + `${}` / `$[]` behavior.
+The fields of **`ConfData`** are not exported. Use the package-level helpers, or work with **`IniMgr`** and **`IniData`** directly when explicit control over loading behavior is required.
 
 ### INI-only (`IniMgr`)
 
-For INI parsing only—no package **`init`**, no automatic env merge:
+Use the following approach when only INI parsing is required and automatic environment merging is not desired:
 
 ```go
 mgr := &tcfg.IniMgr{}
@@ -62,43 +63,43 @@ if v, ok := ini.GetString("MY_KEY"); ok {
 }
 ```
 
-Use **`ParseConfig`** to build data from `[]*tcfg.Config`. The parser supports sections, **`include "path"`** (relative paths are resolved from the including file’s directory), UTF-8 BOM, and line comments (`#`, `;`).
+Use **`ParseConfig`** to build data from `[]*tcfg.Config`. The parser supports sections, **`include "path"`** directives (resolved relative to the including file, with circular includes reported as errors), UTF-8 BOM, and line comments beginning with `#` or `;`.
 
 ## Configuration file discovery
 
-The default loader searches for **`<executable_basename>_config.ini`** in this order:
+The default loader searches for **`<executable_basename>_config.ini`** in the following order:
 
 1. Current working directory  
-2. Directory containing the executable  
+2. Directory containing the current executable (via **`os.Executable`**)  
 3. Ancestor directories of (1), then of (2), up toward the filesystem root  
 
-The first path that refers to a **regular file** wins. If **no** file is found, loading completes with empty INI data (see source).
+The first path that resolves to a **regular file** is used. If no configuration file is found, loading completes with empty INI data.
 
 ## Environment variables
 
-- Resolution order: **environment**, then **INI**.  
+- Resolution order is **environment first**, followed by **INI**.  
 - Keys may use **`SECTION::KEY`**; for environment variables this maps to **`KEY_SECTION`** (see **`EnvData`**).
 
 ## Key prefix and `APP_NAME`
 
-- **`GetKeyPrefix`** / **`SetKeyPrefix`** set a global prefix for key resolution (safe for concurrent use).  
-- If **`APP_NAME`** is set, keys can include an extra normalized segment (uppercase, `-` → `_`), e.g. via **`LocalKey`**.
+- **`GetKeyPrefix`** and **`SetKeyPrefix`** configure a global prefix for key resolution and are safe for concurrent use.  
+- If **`APP_NAME`** is set, keys may include an additional normalized segment (uppercase, with `-` replaced by `_`), for example through **`LocalKey`**.
 
 ## Value interpolation
 
 | Syntax | Behavior |
 |--------|----------|
-| **`${NAME}`** | Replaced with the resolved string value of **`NAME`**. A doubled **`$$`** skips expansion; a final pass turns **`$${x}`** into literal **`${x}`**. |
-| **`$[NAME]`** | Uses the list at **`NAME`** (default separator: comma); multiple **`$[...]`** yield a Cartesian product over those lists. |
-| **Nesting** | Up to **10** rounds of **`${}`** / **`$[]`** expansion per **`String`** call. |
+| **`${NAME}`** | Replaced with the resolved string value of **`NAME`**. A doubled **`$$`** suppresses expansion, and a final unescape pass turns **`$${x}`** into literal **`${x}`**. |
+| **`$[NAME]`** | Resolves **`NAME`** as a list (default separator: comma). Multiple **`$[...]`** placeholders produce a Cartesian product of all referenced lists. |
+| **Nesting** | Up to **10** rounds of **`${}`** and **`$[]`** expansion are performed for each **`String`** call. |
 
-Precompiled patterns (package variables): **`ValStringKeyMatchReg`**, **`ValStringsKeyMatchReg`**, **`ValStringKeyReplaceReg`**.
+The package exposes the following precompiled patterns: **`ValStringKeyMatchReg`**, **`ValStringsKeyMatchReg`**, and **`ValStringKeyReplaceReg`**.
 
 ## Errors
 
-- **`tcfg.ErrNilConfData`** — returned when a method is called on a **`nil *ConfData`** receiver.  
-- Missing keys and some nested-resolution failures may use **`github.com/choveylee/terror`** (e.g. **`ErrDataNotExist`**).
+- **`tcfg.ErrNilConfData`** is returned when a method is invoked on a **`nil *ConfData`** receiver.  
+- Missing keys and certain nested-resolution failures may use error values from **`github.com/choveylee/terror`**, such as **`ErrDataNotExist`**.
 
 ## License
 
-Add your license here.
+This repository does not currently declare a license.

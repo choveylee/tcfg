@@ -1,21 +1,21 @@
-// Package tcfg loads INI configuration together with environment variables, resolves keys
-// using an optional prefix and APP_NAME-based scoping, and expands values that contain
-// ${key} and $[key] placeholders (including $${...} and $$[...] escapes for literal dollar signs).
+// Package tcfg provides configuration loading for INI files and environment variables.
+// It supports optional key prefixes, APP_NAME-based scoping, and value expansion through
+// ${key} and $[key] placeholders, including $${...} and $$[...] escapes for literal dollar signs.
 //
-// # Default import behavior
+// # Default package initialization
 //
-// Importing this package runs init, which constructs a default [ConfData], loads a file named
-// <executable_basename>_config.ini (basename lowercased; '-' replaced with '_'), and binds
-// package-level accessors such as [String] and [Bool] to that instance. If loading fails with
-// an error, init panics.
+// Importing this package initializes a default [ConfData], derives a configuration file name in the
+// form <executable_basename>_config.ini, and binds package-level helpers such as [String] and [Bool]
+// to that instance. The default loader searches the current working directory first and then the
+// directory of the current executable. If initialization encounters an error, package initialization panics.
 //
 // # Resolution order
 //
-// For each key, environment variables are consulted before INI values. Keys may use the form
-// SECTION::KEY in INI; in the environment layer this maps to KEY_SECTION (see [EnvData]).
+// For each logical key, environment variables take precedence over INI values. INI keys may use the
+// form SECTION::KEY; in the environment layer this maps to KEY_SECTION (see [EnvData]).
 //
-// # INI without default loading
+// # INI parsing without default loading
 //
-// Use [IniMgr] and [IniData] to parse INI files or in-memory [Config] rows without the default
-// [ConfData] path or automatic environment merging.
+// Use [IniMgr] and [IniData] to parse INI files or in-memory [Config] values without relying on
+// package initialization or the default [ConfData] instance.
 package tcfg

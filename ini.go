@@ -45,7 +45,41 @@ var (
 type IniMgr struct {
 }
 
-// ParseFile reads and parses the file at filePath. An empty filePath yields an empty [IniData] without error.
+func parseIncludeDirective(line string) (string, bool, error) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "include") {
+		return "", false, nil
+	}
+
+	if len(line) > len("include") {
+		nextChar := line[len("include")]
+		if nextChar != ' ' && nextChar != '\t' {
+			return "", false, nil
+		}
+	}
+
+	rest := strings.TrimSpace(line[len("include"):])
+	if rest == "" {
+		return "", true, fmt.Errorf("tcfg: the include directive requires a file path")
+	}
+
+	if rest[0] == '"' {
+		if len(rest) < 2 || rest[len(rest)-1] != '"' {
+			return "", true, fmt.Errorf("tcfg: malformed include directive: %q", line)
+		}
+
+		return rest[1 : len(rest)-1], true, nil
+	}
+
+	if strings.ContainsAny(rest, " \t") {
+		return "", true, fmt.Errorf("tcfg: include paths containing spaces must be enclosed in double quotes: %q", line)
+	}
+
+	return rest, true, nil
+}
+
+// ParseFile reads and parses the file at filePath. An empty filePath returns an empty [IniData] without error.
+// Include directives are resolved relative to the including file, and circular includes return an error.
 func (p *IniMgr) ParseFile(filePath string) (*IniData, error) {
 	if filePath == "" {
 		iniData := &IniData{
@@ -62,7 +96,7 @@ func (p *IniMgr) ParseFile(filePath string) (*IniData, error) {
 		return iniData, nil
 	}
 
-	return p.parseFile(filePath)
+	return p.parseFile(filePath, nil)
 }
 
 // ParseConfig builds an [IniData] from configs. Keys are uppercased; values may be surrounded by quotes.
@@ -108,18 +142,37 @@ func (p *IniMgr) ParseConfig(configs []*Config) (*IniData, error) {
 }
 
 // parseFile reads filePath and parses its contents; relative include paths resolve against the file's directory.
-func (p *IniMgr) parseFile(filePath string) (*IniData, error) {
+func (p *IniMgr) parseFile(filePath string, includeStack []string) (*IniData, error) {
+	filePath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	filePath = filepath.Clean(filePath)
+
+	for index, includePath := range includeStack {
+		if includePath != filePath {
+			continue
+		}
+
+		cycle := append(append([]string{}, includeStack[index:]...), filePath)
+
+		return nil, fmt.Errorf("tcfg: circular include detected: %s", strings.Join(cycle, " -> "))
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	return p.parseData(filepath.Dir(filePath), data)
+	nextStack := append(includeStack, filePath)
+
+	return p.parseData(filepath.Dir(filePath), data, nextStack)
 }
 
 // parseData parses INI content from data. It strips a UTF-8 BOM, handles [section] headers, key=value lines,
 // include "path" directives, and comment blocks associated with sections or keys.
-func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
+func (p *IniMgr) parseData(dir string, data []byte, includeStack []string) (*IniData, error) {
 	iniData := &IniData{
 		data: make(map[string]map[string]string),
 
@@ -217,47 +270,45 @@ func (p *IniMgr) parseData(dir string, data []byte) (*IniData, error) {
 		if len(params) == 1 {
 			param := string(bytes.TrimSpace(params[0]))
 
-			if strings.HasPrefix(param, "include") {
-				includeFiles := strings.Fields(param)
-
-				if includeFiles[0] == "include" && len(includeFiles) == 2 {
-					includeFile := strings.Trim(includeFiles[1], "\"")
-
-					if !filepath.IsAbs(includeFile) {
-						includeFile = filepath.Join(dir, includeFile)
-					}
-
-					includeIniData, err := p.parseFile(includeFile)
-					if err != nil {
-						return nil, err
-					}
-
-					for section, vals := range includeIniData.data {
-						_, ok := iniData.data[section]
-						if !ok {
-							iniData.data[section] = make(map[string]string)
-						}
-
-						for key, val := range vals {
-							iniData.data[section][key] = val
-						}
-					}
-
-					for section, comment := range includeIniData.secComment {
-						iniData.secComment[section] = comment
-					}
-
-					for key, comment := range includeIniData.keyComment {
-						iniData.keyComment[key] = comment
-					}
-
-					continue
+			includeFile, isInclude, err := parseIncludeDirective(param)
+			if err != nil {
+				return nil, err
+			}
+			if isInclude {
+				if !filepath.IsAbs(includeFile) {
+					includeFile = filepath.Join(dir, includeFile)
 				}
+
+				includeIniData, err := p.parseFile(includeFile, includeStack)
+				if err != nil {
+					return nil, err
+				}
+
+				for section, vals := range includeIniData.data {
+					_, ok := iniData.data[section]
+					if !ok {
+						iniData.data[section] = make(map[string]string)
+					}
+
+					for key, val := range vals {
+						iniData.data[section][key] = val
+					}
+				}
+
+				for section, comment := range includeIniData.secComment {
+					iniData.secComment[section] = comment
+				}
+
+				for key, comment := range includeIniData.keyComment {
+					iniData.keyComment[key] = comment
+				}
+
+				continue
 			}
 		}
 
 		if len(params) != 2 {
-			return nil, fmt.Errorf("tcfg: invalid line: expected key=value, got %q", string(line))
+			return nil, fmt.Errorf("tcfg: invalid configuration line %q: expected KEY=VALUE syntax", string(line))
 		}
 
 		val := bytes.TrimSpace(params[1])
@@ -587,7 +638,7 @@ func parseBool(val interface{}) (value bool, err error) {
 				return false, nil
 			}
 		}
-		return false, fmt.Errorf("parsing %q: invalid syntax", val)
+		return false, fmt.Errorf("tcfg: invalid boolean value %q", val)
 	}
-	return false, fmt.Errorf("parsing <nil>: invalid syntax")
+	return false, fmt.Errorf("tcfg: invalid boolean value <nil>")
 }
