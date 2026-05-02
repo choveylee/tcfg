@@ -2,3 +2,5 @@ github.com/choveylee/terror v0.0.0-20260412130656-8315822d7ee8 h1:PCRzY9OpQnfVOj
 github.com/choveylee/terror v0.0.0-20260412130656-8315822d7ee8/go.mod h1:YvL4CAbFbk+FuulsbcoPivIN1vWaJZ+D8oKIp6G5vAo=
 github.com/choveylee/terror v0.0.0-20260425000752-47a04ab0c1a9 h1:D1w6FujIuOcId8I6uwvwq/PaR4Rpq6+xbNOsnwN1QCU=
 github.com/choveylee/terror v0.0.0-20260425000752-47a04ab0c1a9/go.mod h1:YvL4CAbFbk+FuulsbcoPivIN1vWaJZ+D8oKIp6G5vAo=
+github.com/choveylee/terror v0.0.0-20260502021137-6588de2883eb h1:aIeSgL9kxLNoG0X5loWAwqqo16o+Np0JsOJdljUuPhg=
+github.com/choveylee/terror v0.0.0-20260502021137-6588de2883eb/go.mod h1:YvL4CAbFbk+FuulsbcoPivIN1vWaJZ+D8oKIp6G5vAo=
