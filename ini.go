@@ -45,6 +45,7 @@ var (
 type IniMgr struct {
 }
 
+// parseIncludeDirective parses an include directive and returns the referenced path when present.
 func parseIncludeDirective(line string) (string, bool, error) {
 	line = strings.TrimSpace(line)
 	if !strings.HasPrefix(line, "include") {
@@ -60,19 +61,19 @@ func parseIncludeDirective(line string) (string, bool, error) {
 
 	rest := strings.TrimSpace(line[len("include"):])
 	if rest == "" {
-		return "", true, fmt.Errorf("tcfg: the include directive requires a file path")
+		return "", true, fmt.Errorf("tcfg: the include directive must specify a file path")
 	}
 
 	if rest[0] == '"' {
 		if len(rest) < 2 || rest[len(rest)-1] != '"' {
-			return "", true, fmt.Errorf("tcfg: malformed include directive: %q", line)
+			return "", true, fmt.Errorf("tcfg: invalid include directive syntax: %q", line)
 		}
 
 		return rest[1 : len(rest)-1], true, nil
 	}
 
 	if strings.ContainsAny(rest, " \t") {
-		return "", true, fmt.Errorf("tcfg: include paths containing spaces must be enclosed in double quotes: %q", line)
+		return "", true, fmt.Errorf("tcfg: include paths that contain spaces must be enclosed in double quotes: %q", line)
 	}
 
 	return rest, true, nil
@@ -157,7 +158,7 @@ func (p *IniMgr) parseFile(filePath string, includeStack []string) (*IniData, er
 
 		cycle := append(append([]string{}, includeStack[index:]...), filePath)
 
-		return nil, fmt.Errorf("tcfg: circular include detected: %s", strings.Join(cycle, " -> "))
+		return nil, fmt.Errorf("tcfg: a circular include chain was detected: %s", strings.Join(cycle, " -> "))
 	}
 
 	data, err := os.ReadFile(filePath)
@@ -308,7 +309,7 @@ func (p *IniMgr) parseData(dir string, data []byte, includeStack []string) (*Ini
 		}
 
 		if len(params) != 2 {
-			return nil, fmt.Errorf("tcfg: invalid configuration line %q: expected KEY=VALUE syntax", string(line))
+			return nil, fmt.Errorf("tcfg: invalid configuration line %q; expected KEY=VALUE syntax", string(line))
 		}
 
 		val := bytes.TrimSpace(params[1])
@@ -638,7 +639,7 @@ func parseBool(val interface{}) (value bool, err error) {
 				return false, nil
 			}
 		}
-		return false, fmt.Errorf("tcfg: invalid boolean value %q", val)
+		return false, fmt.Errorf("tcfg: invalid boolean value: %q", val)
 	}
-	return false, fmt.Errorf("tcfg: invalid boolean value <nil>")
+	return false, fmt.Errorf("tcfg: invalid boolean value: <nil>")
 }

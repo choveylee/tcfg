@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/choveylee/tcfg.svg)](https://pkg.go.dev/github.com/choveylee/tcfg)
 
-`tcfg` is a Go library for loading configuration from **INI** files and **environment variables**. It supports optional **key prefixes**, **`APP_NAME`**-based scoping, and value expansion through **`${key}`** and **`$[key]`** placeholders, with **`$${...}`** and **`$$[...]`** available for literal dollar signs.
+`tcfg` is a Go library for loading configuration from **INI** files and **environment variables**. It supports optional **key prefixes**, **`APP_NAME`**-based scoping, and value expansion through **`${key}`** and **`$[key]`** placeholders. Literal dollar signs may be expressed with **`$${...}`** and **`$$[...]`**.
 
 ## Features
 
@@ -31,7 +31,7 @@ go get github.com/choveylee/tcfg
 
 ### Package-level API
 
-Importing the package initializes a default **`ConfData`**, resolves a configuration file named **`<executable_basename>_config.ini`** (basename lowercased, with `-` replaced by `_`), and binds package-level helpers such as `tcfg.String` and `tcfg.Bool` to that instance. The search checks the current working directory first and then the directory containing the current executable (via **`os.Executable`**). If initialization fails, package initialization panics.
+Importing the package initializes the default **`ConfData`** instance, resolves a configuration file named **`<executable_basename>_config.ini`** (with the basename lowercased and `-` replaced by `_`), and binds package-level helpers such as `tcfg.String` and `tcfg.Bool` to that instance. The search checks the current working directory first and then the directory containing the current executable (via **`os.Executable`**). If initialization fails, package initialization panics.
 
 ```go
 import "github.com/choveylee/tcfg"
@@ -63,7 +63,7 @@ if v, ok := ini.GetString("MY_KEY"); ok {
 }
 ```
 
-Use **`ParseConfig`** to build data from `[]*tcfg.Config`. The parser supports sections, **`include "path"`** directives (resolved relative to the including file, with circular includes reported as errors), UTF-8 BOM, and line comments beginning with `#` or `;`.
+Use **`ParseConfig`** to build data from `[]*tcfg.Config`. The parser supports sections, **`include "path"`** directives (resolved relative to the including file, with circular include chains reported as errors), UTF-8 BOM, and line comments beginning with `#` or `;`.
 
 ## Configuration file discovery
 
@@ -73,7 +73,7 @@ The default loader searches for **`<executable_basename>_config.ini`** in the fo
 2. Directory containing the current executable (via **`os.Executable`**)  
 3. Ancestor directories of (1), then of (2), up toward the filesystem root  
 
-The first path that resolves to a **regular file** is used. If no configuration file is found, loading completes with empty INI data.
+The first path that resolves to a **regular file** is used. If no configuration file is found, loading proceeds with empty INI data.
 
 ## Environment variables
 
@@ -97,7 +97,7 @@ The package exposes the following precompiled patterns: **`ValStringKeyMatchReg`
 
 ## Errors
 
-- **`tcfg.ErrNilConfData`** is returned when a method is invoked on a **`nil *ConfData`** receiver.  
+- **`tcfg.ErrNilConfData`** is returned when an operation is invoked on a **`nil *ConfData`** receiver.  
 - Missing keys and certain nested-resolution failures may use error values from **`github.com/choveylee/terror`**, such as **`ErrDataNotExist`**.
 
 ## License

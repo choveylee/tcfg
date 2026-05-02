@@ -36,8 +36,8 @@ const (
 	DefaultAppName = "APP_NAME"
 )
 
-// ErrNilConfData is returned when a method is invoked on a nil *ConfData receiver.
-var ErrNilConfData = errors.New("tcfg: a nil *ConfData receiver was used")
+// ErrNilConfData is returned when an operation is invoked on a nil *ConfData receiver.
+var ErrNilConfData = errors.New("tcfg: the operation cannot be performed on a nil *ConfData receiver")
 
 var (
 	keyPrefixMutex sync.RWMutex
